@@ -5,6 +5,7 @@ from ecgdetectors import Detectors
 
 from matplotlib import pyplot as plt
 import numpy as np
+import statistics
 import scipy.stats as stats
 from datetime import datetime
 import csv
@@ -18,7 +19,7 @@ import progressbar
 
 class ECG:
 
-    def __init__(self, filepath=None, output_dir=None, age=None, epoch_len=15, offset=0,
+    def __init__(self, filepath=None, output_dir=None, age=None, epoch_len=15, offset=0, rest_hr_window=60,
                  filter=False, low_f=1, high_f=30, f_type="bandpass",
                  from_processed=True, write_results=True):
 
@@ -64,10 +65,15 @@ class ECG:
         # List of epoched heart rates but any invalid epoch is marked as None instead of 0 (as is self.epoch_hr)
         self.valid_hr = [self.epoch_hr[i] if self.epoch_validity[i] == 0 else None for i in range(len(self.epoch_hr))]
 
-        # Calculates HR as a percent of HR max
-        self.perc_hrmax = self.calculate_percent_hrmax()
+        # Calcultes resting HR
+        self.rolling_avg_hr, self.rest_hr = self.find_resting_hr()
+
+        # Relative HR
+        self.perc_hrr = self.calculate_percent_hrr()
 
         self.quality_report = self.generate_quality_report()
+
+        self.epoch_intensity, self.intensity_totals = self.calculate_intensity()
 
         if self.write_results:
             self.write_output()
@@ -166,16 +172,120 @@ class ECG:
 
         return epoch_timestamps, epoch_validity, epoch_hr
 
-    def calculate_percent_hrmax(self):
-        """Calculates HR as percent of predicted HR max using the equation from Tanaka et al. (2001)."""
+    def find_resting_hr(self, window_size=60, show_plot=False):
+        """Function that calculates a rolling average HR over specified time interval and locate its minimum.
+
+        :argument
+        -window_size: size of window over which rolling average is calculated, seconds
+        -show_plot: whether data is plotted
+        """
+
+        # Sets integer for window length based on window_size and epoch_len
+        window_len = int(window_size / self.epoch_len)
+
+        # Calculates rolling average over window_len number of epochs
+        rolling_avg = [statistics.mean(self.epoch_hr[i:i + window_len]) if 0 not in self.epoch_hr[i:i + window_len]
+                       else None for i in range(len(self.epoch_hr))]
+
+        # Finds lowest HR
+        resting_hr = min([i for i in rolling_avg if i is not None])
+
+        print("Minimum HR in {}-second window = {} bpm.".format(window_size, round(resting_hr, 1)))
+
+        # Finds index where lowest HR occurred
+        min_index = np.argwhere(np.asarray(rolling_avg) == resting_hr)[0][0]
+        mean_hr = round(statistics.mean([i for i in self.valid_hr if i is not None]), 1)
+        sd_hr = round(statistics.stdev([i for i in self.valid_hr if i is not None]), 1)
+
+        # Plots epoch-by-epoch and rolling average HRs with resting HR location marked
+        if show_plot:
+            plt.title("Resting Heart Rate")
+
+            plt.plot(self.epoch_timestamps, self.valid_hr, color='black',
+                     label="Epoch-by-Epoch ({}-sec)".format(self.epoch_len))
+
+            plt.plot(self.epoch_timestamps[0:len(rolling_avg)], rolling_avg, color='blue',
+                     label="Rolling average ({}-sec)".format(window_size))
+
+            plt.ylim(40, 200)
+
+            plt.axvline(x=self.epoch_timestamps[min_index], color='red', linestyle='dashed',
+                        label="Rest HR ({} bpm)".format(round(resting_hr, 1)))
+
+            plt.fill_between(x=self.epoch_timestamps, y1=(mean_hr - 1.96 * sd_hr), y2=(mean_hr + 1.96 * sd_hr),
+                             color="grey", alpha=0.35,
+                             label='95% Conf. Int. ({}-{} bpm)'.format(round(mean_hr-1.96*sd_hr, 1),
+                                                                       round(mean_hr+1.96*sd_hr, 1)))
+
+            plt.ylabel("HR (bpm)")
+            plt.legend(loc='upper left')
+
+        return rolling_avg, resting_hr
+
+    def calculate_percent_hrr(self):
+        """Calculates HR as percent of heart rate reserve using resting heart rate and predicted HR max using the
+        equation from Tanaka et al. (2001)."""
 
         hr_max = 208 - 0.7 * self.age
 
-        # Calculates %HRmax for valid epochs
-        perc_hrmax= [round(100*self.epoch_hr[i]/hr_max, 1) if self.epoch_validity[i] == 0
-                     else None for i in range(len(self.epoch_hr))]
+        perc_hrr = [100 * (hr - self.rest_hr) / (hr_max - self.rest_hr) if hr
+                    is not None else None for hr in self.valid_hr]
 
-        return perc_hrmax
+        return perc_hrr
+
+    def calculate_intensity(self):
+        """Calculates intensity category based on %HRR ranges.
+           Sums values to determine total time spent in each category.
+
+        :returns
+        -intensity: epoch-by-epoch categorization by intensity. 0=sedentary, 1=light, 2=moderate, 3=vigorous
+        -intensity_minutes: total minutes spent at each intensity, dictionary
+        """
+
+        # Calculates epoch-by-epoch intensity
+        # Sedentary = %HRR < 30, light = 30 < %HRR <= 40, moderate = 40 < %HRR <= 60, vigorous = %HRR >= 60
+
+        intensity = []
+
+        for hrr in self.perc_hrr:
+            if hrr is None:
+                intensity.append(None)
+
+            if hrr is not None:
+                if hrr < 30:
+                    intensity.append(0)
+                if 30 <= hrr < 40:
+                    intensity.append(1)
+                if 40 <= hrr < 60:
+                    intensity.append(2)
+                if hrr >= 60:
+                    intensity.append(3)
+
+        # Calculates time spent in each intensity category
+        intensity_totals = {"Sedentary": intensity.count(0) / (60 / self.epoch_len),
+                            "Sedentary%": round(intensity.count(0) / len(self.valid_hr), 3),
+                            "Light": intensity.count(1) / (60 / self.epoch_len),
+                            "Light%": round(intensity.count(1) / len(self.valid_hr), 3),
+                            "Moderate": intensity.count(2) / (60 / self.epoch_len),
+                            "Moderate%": round(intensity.count(2) / len(self.valid_hr), 3),
+                            "Vigorous": intensity.count(3) / (60 / self.epoch_len),
+                            "Vigorous%": round(intensity.count(3) / len(self.valid_hr), 3)
+                            }
+
+        print("\n" + "HEART RATE MODEL SUMMARY")
+        print("Sedentary: {} minutes ({}%)".format(intensity_totals["Sedentary"],
+                                                   round(intensity_totals["Sedentary%"] * 100, 3)))
+
+        print("Light: {} minutes ({}%)".format(intensity_totals["Light"],
+                                               round(intensity_totals["Light%"] * 100, 3)))
+
+        print("Moderate: {} minutes ({}%)".format(intensity_totals["Moderate"],
+                                                  round(intensity_totals["Moderate%"] * 100, 3)))
+
+        print("Vigorous: {} minutes ({}%)".format(intensity_totals["Vigorous"],
+                                                  round(intensity_totals["Vigorous%"] * 100, 3)))
+
+        return intensity, intensity_totals
 
     def write_output(self):
         """Writes csv of epoched timestamps, validity category."""
@@ -431,16 +541,3 @@ class CheckQuality:
             self.valid_period = True
         else:
             self.valid_period = False
-
-
-"""def longest(data):
-    maximum = count = 0
-    current = ''
-    for epoch in data:
-        if epoch == current and epoch == 0:
-            count += 1
-        else:
-            count = 1
-            current = epoch
-        maximum = max(count, maximum)
-    return maximum"""

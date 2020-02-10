@@ -116,10 +116,17 @@ class WristModel:
         print("Complete.")
 
         print("\n" + "WRIST MODEL SUMMARY")
-        print("Sedentary: {}%".format(round(self.intensity_totals["Sedentary%"]*100, 3)))
-        print("Light: {}%".format(round(self.intensity_totals["Light%"]*100, 3)))
-        print("Moderate: {}%".format(round(self.intensity_totals["Moderate%"]*100, 3)))
-        print("Vigorous: {}%".format(round(self.intensity_totals["Vigorous%"]*100, 3)))
+        print("Sedentary: {} minutes ({}%)".format(self.intensity_totals["Sedentary"],
+                                                   round(self.intensity_totals["Sedentary%"]*100, 3)))
+
+        print("Light: {} minutes ({}%)".format(self.intensity_totals["Light"],
+                                               round(self.intensity_totals["Light%"]*100, 3)))
+
+        print("Moderate: {} minutes ({}%)".format(self.intensity_totals["Moderate"],
+                                                  round(self.intensity_totals["Moderate%"]*100, 3)))
+
+        print("Vigorous: {} minutes ({}%)".format(self.intensity_totals["Vigorous"],
+                                                  round(self.intensity_totals["Vigorous%"]*100, 3)))
 
 # ====================================================================================================================
 # ================================================ ANKLE ACCELEROMETER ===============================================
@@ -581,9 +588,27 @@ class AnkleModel:
 
         # Calculates time spent in each intensity category
         intensity_totals = {"Sedentary": intensity.count(0) / (60 / self.epoch_len),
+                            "Sedentary%": round(intensity.count(0) / len(self.epoch_data), 3),
                             "Light": intensity.count(1) / (60 / self.epoch_len),
+                            "Light%": round(intensity.count(1) / len(self.epoch_data), 3),
                             "Moderate": intensity.count(2) / (60 / self.epoch_len),
-                            "Vigorous": intensity.count(3) / (60 / self.epoch_len)}
+                            "Moderate%": round(intensity.count(2) / len(self.epoch_data), 3),
+                            "Vigorous": intensity.count(3) / (60 / self.epoch_len),
+                            "Vigorous%": round(intensity.count(3) / len(self.epoch_data), 3)
+                            }
+
+        print("\n" + "ANKLE MODEL SUMMARY")
+        print("Sedentary: {} minutes ({}%)".format(intensity_totals["Sedentary"],
+                                                   round(intensity_totals["Sedentary%"] * 100, 3)))
+
+        print("Light: {} minutes ({}%)".format(intensity_totals["Light"],
+                                               round(intensity_totals["Light%"] * 100, 3)))
+
+        print("Moderate: {} minutes ({}%)".format(intensity_totals["Moderate"],
+                                                  round(intensity_totals["Moderate%"] * 100, 3)))
+
+        print("Vigorous: {} minutes ({}%)".format(intensity_totals["Vigorous"],
+                                                  round(intensity_totals["Vigorous%"] * 100, 3)))
 
         return intensity, intensity_totals
 
