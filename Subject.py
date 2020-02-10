@@ -8,7 +8,6 @@ import NonWearLog
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import datetime
-import statistics as stats
 import numpy as np
 
 # ====================================================================================================================
@@ -106,7 +105,7 @@ class Subject:
 
         # WRIST
         try:
-            ax1.plot(self.wrist.epoch.timestamps, self.wrist.epoch.svm, color='black', label="Wrist")
+            ax1.plot(self.wrist.epoch.timestamps, self.wrist.epoch.svm, color='black', label="Wrist Acc.")
             ax1.axhline(y=0, linestyle='dashed', color='red')
             ax1.legend(loc='upper left')
             ax1.set_ylabel("Counts")
@@ -115,7 +114,7 @@ class Subject:
 
         # ANKLE
         try:
-            ax2.plot(self.ankle.epoch.timestamps, self.ankle.epoch.svm, color='black', label="Ankle")
+            ax2.plot(self.ankle.epoch.timestamps, self.ankle.epoch.svm, color='black', label="Ankle Acc.")
             ax2.axhline(y=0, linestyle='dashed', color='red')
             ax2.legend(loc='upper left')
             ax2.set_ylabel("Counts")
@@ -124,8 +123,10 @@ class Subject:
 
         # HEART RATE
         try:
-            ax3.plot(self.ecg.epoch_timestamps, self.ecg.valid_hr, color='blue', label="HR (valid only)")
-            ax3.plot(self.ecg.epoch_timestamps, self.ecg.rolling_avg_hr, color='black', label="Rolling Average")
+            ax3.plot(self.ecg.epoch_timestamps, self.ecg.valid_hr, color='blue',
+                     label="HR ({} sec)".format(self.epoch_len))
+            ax3.plot(self.ecg.epoch_timestamps, self.ecg.rolling_avg_hr, color='black',
+                     label="Rolling Average ({} sec)".format(self.rest_hr_window))
             ax3.axvline(x=self.ecg.epoch_timestamps[np.argwhere(np.asarray(self.ecg.rolling_avg_hr)
                                                                 == self.ecg.rest_hr)[0][0]],
                         color='red', linestyle='dashed',
@@ -141,6 +142,56 @@ class Subject:
         ax3.xaxis.set_major_locator(locator)
         plt.xticks(rotation=45, fontsize=6)
 
+    def plot_total_activity(self):
+        """Generates barplots of total activity minutes for each model.
+        """
+
+        sedentary_minutes = [self.wrist.model.intensity_totals["Sedentary"],
+                             self.ankle.model.intensity_totals["Sedentary"],
+                             self.ecg.intensity_totals["Sedentary"],
+                             0]
+
+        light_minutes = [self.wrist.model.intensity_totals["Light"],
+                         self.ankle.model.intensity_totals["Light"],
+                         self.ecg.intensity_totals["Light"],
+                         0]
+
+        moderate_minutes = [self.wrist.model.intensity_totals["Moderate"],
+                            self.ankle.model.intensity_totals["Moderate"],
+                            self.ecg.intensity_totals["Moderate"],
+                            0]
+
+        vigorous_minutes = [self.wrist.model.intensity_totals["Vigorous"],
+                            self.ankle.model.intensity_totals["Vigorous"],
+                            self.ecg.intensity_totals["Vigorous"],
+                            0]
+
+        plt.subplots(2, 2, figsize=(10, 7))
+
+        # Sedentary activity
+        plt.subplot(2, 2, 1)
+        plt.title("Sedentary")
+        plt.bar(["Wrist", "Ankle", "HR", "HR-Acc"], sedentary_minutes, color='grey', edgecolor='black')
+        plt.ylabel("Minutes")
+
+        # Light activity
+        plt.subplot(2, 2, 2)
+        plt.title("Light Activity")
+        plt.bar(["Wrist", "Ankle", "HR", "HR-Acc"], light_minutes, color='green', edgecolor='black')
+        plt.ylabel("Minutes")
+
+        # Moderate activity
+        plt.subplot(2, 2, 3)
+        plt.title("Moderate Activity")
+        plt.bar(["Wrist", "Ankle", "HR", "HR-Acc"], moderate_minutes, color='#EA5B19', edgecolor='black')
+        plt.ylabel("Minutes")
+
+        # Vigorous activity
+        plt.subplot(2, 2, 4)
+        plt.title("Vigorous Activity")
+        plt.bar(["Wrist", "Ankle", "HR", "HR-Acc"], vigorous_minutes, color='red', edgecolor='black')
+        plt.ylabel("Minutes")
+
 
 x = Subject(ankle_filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3037_01_GA_LAnkle_Accelerometer.EDF",
             wrist_filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3037_01_GA_LWrist_Accelerometer.EDF",
@@ -153,4 +204,18 @@ x = Subject(ankle_filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_30
             treadmill_processed=True,
             treadmill_log_file="/Users/kyleweber/Desktop/Data/OND07/Treadmill_Log.csv",
             demographics_file="/Users/kyleweber/Desktop/Data/OND07/Participant Information/Demographics_Data.csv",
-            write_results=False, plot_data=False)
+            write_results=False,
+            plot_data=False)
+
+
+import os
+import ConvertFile
+
+file_list = [i for i in os.listdir("/Users/kyleweber/Desktop/Data/Non-Wear") if ".bin" in i]
+
+for file in file_list:
+
+    print("Converting {}..".format(file))
+    ConvertFile.bin_to_edf(file_in="/Users/kyleweber/Desktop/Data/Non-Wear/" + file,
+                           out_path="/Users/kyleweber/Desktop/Data/Conversion Folder/",
+                           accel=True, temperature=True, button=False, light=False)

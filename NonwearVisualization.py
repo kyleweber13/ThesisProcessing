@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import numpy as np
 from datetime import datetime
+import pandas as pd
 
 
 # ConvertFile.bin_to_edf(file_in="", out_path="/Users/kyleweber/Desktop/Data/Conversion Folder/")
@@ -46,27 +47,16 @@ class Data:
         -off/on: lists of timestamps
         """
 
-        try:
-            off, on = np.loadtxt(fname=self.log_filepath, delimiter=",", usecols=(0, 1), dtype="str",
-                                 skiprows=0, unpack=True, encoding='utf-8')
+        file = pd.read_excel(io=self.log_filepath, header=0, usecols=(0, 1, 2))
 
-            on = [datetime.strptime(i, "%Y-%m-%d %H:%M") if "\ufeff" not in i else
-                   datetime.strptime(i[1:], "%Y-%m-%d %H:%M") for i in on]
-
-            off = [datetime.strptime(i, "%Y-%m-%d %H:%M") if "\ufeff" not in i else
-                   datetime.strptime(i[1:], "%Y-%m-%d %H:%M") for i in off]
-
-            return off, on
-
-        except AttributeError:
-            return None, None
+        return file["Off"], file["On"]
 
     def plot_nonwear(self):
         """Plots raw triaxial accelerometer, epoched accelerometer, and temperature data on 3 subplots with shaded
            regions corresponding to worn/not worn periods."""
 
         # Timestamp x-axis formatting
-        xfmt = mdates.DateFormatter("%a, %I:%M %p")
+        xfmt = mdates.DateFormatter("%m %d, %I:%M:%S %p")
         locator = mdates.HourLocator(byhour=[0, 6, 12, 18, 24], interval=1)
 
         fig, (ax1, ax2, ax3) = plt.subplots(3, sharex='col', figsize=(10, 7))
@@ -82,12 +72,14 @@ class Data:
         ax1.set_ylabel("G")
 
         # Epoched accelerometer
-        ax2.plot(self.accel_epoch.timestamps, self.accel_epoch.svm, color='black', label="Epoched accel")
+        ax2.plot(self.accel_epoch.timestamps[0:len(self.accel_epoch.svm)], self.accel_epoch.svm,
+                 color='black', label="Epoched accel")
         ax2.set_ylabel("Counts")
         ax2.legend(loc='upper left')
 
         # Temperature
-        ax3.plot(self.temperature.timestamps, self.temperature.temp, color='black', label="Temperature")
+        ax3.plot(self.temperature.timestamps[0:len(self.temperature.temp)], self.temperature.temp,
+                 color='black', label="Temperature")
         ax3.set_ylabel("ºC")
         ax3.legend(loc='upper left')
 
@@ -114,7 +106,6 @@ class Data:
         except:
             pass
 
-
-x = Data(accel_filepath="/Users/kyleweber/Desktop/Data/Non-Wear/KW_NW_Validation_RW_Accelerometer.EDF",
-         temperature_filepath="/Users/kyleweber/Desktop/Data/Non-Wear/KW_NW_Validation_RW_Temperature.EDF",
-         log_filepath="/Users/kyleweber/Desktop/Data/Non-Wear/KW_NW_Validation_RW_Log.csv")
+# x = Data(accel_filepath="/Users/kyleweber/Desktop/Data/Non-Wear/Test4_Accelerometer.EDF",
+#         temperature_filepath="/Users/kyleweber/Desktop/Data/Non-Wear/Test4_Temperature.EDF",
+#        log_filepath="/Users/kyleweber/Desktop/Data/Non-Wear/Test4.xlsx")

@@ -50,6 +50,3 @@ def bin_to_edf(file_in, out_path, accel=True, temperature=True, light=False, but
                    light=save_light, button=save_button)
 
     return geneactiv_object
-
-
-bin_to_edf(file_in='/Users/kyleweber/Desktop/Data/KW_NW_Validation_RW.bin', out_path='/Users/kyleweber/Desktop/')
