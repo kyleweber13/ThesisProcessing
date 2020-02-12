@@ -17,7 +17,7 @@ from sklearn import linear_model
 
 class Wrist:
 
-    def __init__(self, filepath, output_dir, epoch_len=15, offset=0,
+    def __init__(self, filepath, output_dir, epoch_len=15, start_offset=0, end_offset=0,
                  from_processed=True, processed_folder=None, write_results=False):
 
         print()
@@ -28,14 +28,18 @@ class Wrist:
         self.output_dir = output_dir
 
         self.epoch_len = epoch_len
-        self.offset = offset
+        self.start_offset = start_offset
+        self.end_offset = end_offset
 
         self.from_processed = from_processed
         self.processed_folder = processed_folder
         self.write_results = write_results
 
         # Loads raw accelerometer data and generates timestamps
-        self.raw = ImportEDF.GENEActiv(filepath=self.filepath, offset=self.offset, from_processed=self.from_processed)
+        self.raw = ImportEDF.GENEActiv(filepath=self.filepath,
+                                       start_offset=self.start_offset, end_offset=self.end_offset,
+                                       from_processed=self.from_processed)
+
         self.epoch = EpochData.EpochAccel(raw_data=self.raw,
                                           from_processed=self.from_processed, processed_folder=processed_folder)
 
@@ -135,7 +139,8 @@ class WristModel:
 
 class Ankle:
 
-    def __init__(self, filepath=None, output_dir=None, rvo2=None, age=None, epoch_len=15, offset=0,
+    def __init__(self, filepath=None, output_dir=None, rvo2=None, age=None, epoch_len=15,
+                 start_offset=0, end_offset=0,
                  remove_baseline=False,
                  from_processed=True, treadmill_processed=False, treadmill_log_file=None,
                  processed_folder=None, write_results=False):
@@ -152,7 +157,8 @@ class Ankle:
         self.age = age
 
         self.epoch_len = epoch_len
-        self.offset = offset
+        self.start_offset = start_offset
+        self.end_offset = end_offset
         self.remove_baseline = remove_baseline
 
         self.from_processed = from_processed
@@ -162,7 +168,8 @@ class Ankle:
         self.write_results = write_results
 
         # Loads raw accelerometer data and generates timestamps
-        self.raw = ImportEDF.GENEActiv(filepath=self.filepath, offset=self.offset,
+        self.raw = ImportEDF.GENEActiv(filepath=self.filepath,
+                                       start_offset=self.start_offset, end_offset=self.end_offset,
                                        from_processed=self.from_processed)
 
         self.epoch = EpochData.EpochAccel(raw_data=self.raw, epoch_len=self.epoch_len,

@@ -9,10 +9,11 @@ import Filtering
 
 class GENEActiv:
 
-    def __init__(self, filepath, from_processed, offset=0):
+    def __init__(self, filepath, from_processed, start_offset=0, end_offset=0):
 
         self.filepath = filepath
-        self.offset = offset
+        self.start_offset = start_offset
+        self.end_offset = end_offset
         self.from_processed = from_processed
 
         # Accelerometer data
@@ -27,7 +28,7 @@ class GENEActiv:
         self.starttime = None
         self.file_dur = None
 
-        # IMPORTS GENEACTIV FILE
+        # IMPORTS GENEActiv FILE
         if not self.from_processed:
             self.import_file()
 
@@ -41,16 +42,16 @@ class GENEActiv:
         # READS IN ACCELEROMETER DATA ================================================================================
         file = pyedflib.EdfReader(self.filepath)
 
-        self.x = file.readSignal(chn=0)
-        self.y = file.readSignal(chn=1)
-        self.z = file.readSignal(chn=2)
+        self.x = file.readSignal(chn=0, start=self.start_offset, n=self.end_offset)
+        self.y = file.readSignal(chn=1, start=self.start_offset, n=self.end_offset)
+        self.z = file.readSignal(chn=2, start=self.start_offset, n=self.end_offset)
 
         # Calculates gravity-subtracted vector magnitude
         self.vm = [round(abs(math.sqrt(math.pow(self.x[i], 2) + math.pow(self.y[i], 2) +
-                                        math.pow(self.z[i], 2)) - 1), 5) for i in range(len(self.x))]
+                                       math.pow(self.z[i], 2)) - 1), 5) for i in range(len(self.x))]
 
         self.sample_rate = file.getSampleFrequencies()[1]  # sample rate
-        self.starttime = file.getStartdatetime() + timedelta(seconds=self.offset/self.sample_rate)
+        self.starttime = file.getStartdatetime() + timedelta(seconds=self.start_offset/self.sample_rate)
         self.file_dur = round(file.getFileDuration() / 3600, 3)  # Seconds --> hours
 
         # TIMESTAMP GENERATION ========================================================================================
@@ -72,10 +73,11 @@ class GENEActiv:
 
 class GENEActivTemperature:
 
-    def __init__(self, filepath, from_processed=False, offset=0):
+    def __init__(self, filepath, from_processed=False, start_offset=0, end_offset=0):
 
         self.filepath = filepath
-        self.offset = offset
+        self.start_offset = start_offset
+        self.end_offset = end_offset
         self.from_processed = from_processed
 
         # Accelerometer data
@@ -104,7 +106,7 @@ class GENEActivTemperature:
         self.temp = file.readSignal(chn=0)
 
         self.sample_rate = file.getSampleFrequencies()[0]  # sample rate
-        self.starttime = file.getStartdatetime() + timedelta(seconds=self.offset/self.sample_rate)
+        self.starttime = file.getStartdatetime() + timedelta(seconds=self.start_offset/self.sample_rate)
         self.file_dur = round(file.getFileDuration() / 3600, 3)  # Seconds --> hours
 
         # TIMESTAMP GENERATION ========================================================================================
@@ -126,10 +128,12 @@ class GENEActivTemperature:
 
 class Bittium:
 
-    def __init__(self, filepath, offset=0, epoch_len=15, filter=True, low_f=1, high_f=30, f_type="bandpass"):
+    def __init__(self, filepath, start_offset=0, end_offset=0, epoch_len=15,
+                 filter=True, low_f=1, high_f=30, f_type="bandpass"):
 
         self.filepath = filepath
-        self.offset = offset
+        self.start_offset = start_offset
+        self.end_offset = end_offset
         self.epoch_len = epoch_len
 
         # Filter details
@@ -158,20 +162,17 @@ class Bittium:
 
         t0 = datetime.now()
 
-        print()
-        print("============================================ ECG IMPORT =============================================")
         print("\n" + "Importing {}...".format(self.filepath))
 
         file = pyedflib.EdfReader(self.filepath)
 
         # READS IN ECG DATA ===========================================================================================
-        self.raw = file.readSignal(chn=0)
+        self.raw = file.readSignal(chn=0, start=self.start_offset, n=self.end_offset)
 
         print("ECG data import complete.")
 
         self.sample_rate = file.getSampleFrequencies()[0]
-        self.starttime = file.getStartdatetime() + timedelta(seconds=self.offset/self.sample_rate)
-        self.starttime = file.getStartdatetime()
+        self.starttime = file.getStartdatetime() + timedelta(seconds=self.start_offset/self.sample_rate)
         self.file_dur = round(file.getFileDuration() / 3600, 3)
 
         # Data filtering
@@ -186,6 +187,7 @@ class Bittium:
         # FORMATTING NEEDS WORK
         end_time = self.starttime + timedelta(seconds=len(self.raw)/self.sample_rate)
         self.timestamps = np.asarray(pd.date_range(start=self.starttime, end=end_time, periods=len(self.raw)))
+        self.epoch_timestamps = self.timestamps[::self.epoch_len * self.sample_rate]
 
         # CORRECT FORMATTING
         # self.timestamps = [self.starttime + timedelta(seconds=i/self.sample_rate) for i in range(len(self.raw))]

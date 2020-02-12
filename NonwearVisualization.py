@@ -1,7 +1,7 @@
 # from owcurate.Files import Converters
 import ImportEDF
 import EpochData
-# import ConvertFile
+import ConvertFile
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import numpy as np
@@ -106,6 +106,7 @@ class Data:
         except:
             pass
 
-# x = Data(accel_filepath="/Users/kyleweber/Desktop/Data/Non-Wear/Test4_Accelerometer.EDF",
-#         temperature_filepath="/Users/kyleweber/Desktop/Data/Non-Wear/Test4_Temperature.EDF",
-#        log_filepath="/Users/kyleweber/Desktop/Data/Non-Wear/Test4.xlsx")
+
+x = Data(accel_filepath="/Users/kyleweber/Desktop/Data/Non-Wear/Test1_Accelerometer.EDF",
+         temperature_filepath="/Users/kyleweber/Desktop/Data/Non-Wear/Test1_Temperature.EDF",
+         log_filepath="/Users/kyleweber/Desktop/Data/Non-Wear/Test1.xlsx")

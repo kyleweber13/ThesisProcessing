@@ -19,9 +19,10 @@ import progressbar
 
 class ECG:
 
-    def __init__(self, filepath=None, output_dir=None, age=None, epoch_len=15, offset=0, rest_hr_window=60,
+    def __init__(self, filepath=None, output_dir=None, age=None, start_offset=0, end_offset=0,
+                 rest_hr_window=60, epoch_len=15,
                  filter=False, low_f=1, high_f=30, f_type="bandpass",
-                 from_processed=True, write_results=True):
+                 load_raw=False, from_processed=True, write_results=True):
 
         print()
         print("============================================= ECG DATA ==============================================")
@@ -31,19 +32,23 @@ class ECG:
         self.output_dir = output_dir
         self.age = age
         self.epoch_len = epoch_len
-        self.offset = offset
+        self.rest_hr_window = rest_hr_window
+        self.start_offset = start_offset
+        self.end_offset = end_offset
 
         self.filter = filter
         self.low_f = low_f
         self.high_f = high_f
         self.f_type = f_type
 
+        self.load_raw = load_raw
         self.from_processed = from_processed
         self.write_results = write_results
 
         # Raw data
-        if not self.from_processed:
-            self.ecg = ImportEDF.Bittium(filepath=self.filepath, offset=self.offset,
+        if self.load_raw:
+            self.ecg = ImportEDF.Bittium(filepath=self.filepath,
+                                         start_offset=self.start_offset, end_offset=self.end_offset,
                                          filter=self.filter, low_f=self.low_f, high_f=self.high_f, f_type=self.f_type)
 
             self.sample_rate = self.ecg.sample_rate
@@ -55,8 +60,8 @@ class ECG:
             del self.ecg
 
             # Performs quality control check on raw data and epochs data
-            if not self.from_processed:
-                self.epoch_validity, self.epoch_hr = self.check_quality()
+        if not self.from_processed:
+            self.epoch_validity, self.epoch_hr = self.check_quality()
 
         # Loads epoched data from existing file
         if self.from_processed:
@@ -66,7 +71,7 @@ class ECG:
         self.valid_hr = [self.epoch_hr[i] if self.epoch_validity[i] == 0 else None for i in range(len(self.epoch_hr))]
 
         # Calcultes resting HR
-        self.rolling_avg_hr, self.rest_hr = self.find_resting_hr()
+        self.rolling_avg_hr, self.rest_hr = self.find_resting_hr(window_size=self.rest_hr_window)
 
         # Relative HR
         self.perc_hrr = self.calculate_percent_hrr()
@@ -88,7 +93,7 @@ class ECG:
         epoch_hr = []
 
         bar = progressbar.ProgressBar(maxval=len(self.raw),
-                                      widgets=[progressbar.Bar('>', '', ']'), ' ',
+                                      widgets=[progressbar.Bar('>', '[', ']'), ' ',
                                                progressbar.Percentage()])
         bar.start()
 
@@ -261,15 +266,17 @@ class ECG:
                 if hrr >= 60:
                     intensity.append(3)
 
+        n_valid_epochs = len(self.valid_hr) - self.quality_report["Invalid epochs"]
+
         # Calculates time spent in each intensity category
         intensity_totals = {"Sedentary": intensity.count(0) / (60 / self.epoch_len),
-                            "Sedentary%": round(intensity.count(0) / len(self.valid_hr), 3),
+                            "Sedentary%": round(intensity.count(0) / n_valid_epochs, 3),
                             "Light": intensity.count(1) / (60 / self.epoch_len),
-                            "Light%": round(intensity.count(1) / len(self.valid_hr), 3),
+                            "Light%": round(intensity.count(1) / n_valid_epochs, 3),
                             "Moderate": intensity.count(2) / (60 / self.epoch_len),
-                            "Moderate%": round(intensity.count(2) / len(self.valid_hr), 3),
+                            "Moderate%": round(intensity.count(2) / n_valid_epochs, 3),
                             "Vigorous": intensity.count(3) / (60 / self.epoch_len),
-                            "Vigorous%": round(intensity.count(3) / len(self.valid_hr), 3)
+                            "Vigorous%": round(intensity.count(3) / n_valid_epochs, 3)
                             }
 
         print("\n" + "HEART RATE MODEL SUMMARY")
