@@ -260,7 +260,7 @@ def crop_end(subject_object):
 
         # ECG ends first
         if ankle_end >= ecg_end:
-            ankle_end_offset = (ankle_end - wrist_end).seconds * ankle_samplerate
+            ankle_end_offset = (ankle_end - ecg_end).seconds * ankle_samplerate
             print("-ECG ended first." + "\n" + "-Ankle offset = {}.".format(ankle_end_offset))
 
         # Ankle ends first

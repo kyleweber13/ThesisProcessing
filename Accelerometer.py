@@ -17,7 +17,7 @@ from sklearn import linear_model
 
 class Wrist:
 
-    def __init__(self, filepath, output_dir, epoch_len=15, start_offset=0, end_offset=0,
+    def __init__(self, filepath, output_dir, epoch_len=15, start_offset=0, end_offset=0, ecg_object=None,
                  from_processed=True, processed_folder=None, write_results=False):
 
         print()
@@ -30,6 +30,8 @@ class Wrist:
         self.epoch_len = epoch_len
         self.start_offset = start_offset
         self.end_offset = end_offset
+
+        self.ecg_obejct = ecg_object
 
         self.from_processed = from_processed
         self.processed_folder = processed_folder
@@ -44,7 +46,7 @@ class Wrist:
                                           from_processed=self.from_processed, processed_folder=processed_folder)
 
         # Model
-        self.model = WristModel(accel_object=self)
+        self.model = WristModel(accel_object=self, ecg_object=self.ecg_obejct)
 
         # Write results
         if self.write_results:
@@ -65,12 +67,19 @@ class Wrist:
 
 class WristModel:
 
-    def __init__(self, accel_object):
+    def __init__(self, accel_object, ecg_object=None):
 
         self.accel_object = accel_object
 
+        if ecg_object is not None:
+            self.valid_ecg = ecg_object.epoch_validity
+        if ecg_object is None:
+            self.valid_ecg = None
+
         self.epoch_intensity = []
+        self.epoch_intensity_valid = None
         self.intensity_totals = None
+        self.intensity_totals_valid = None
 
         # Calculates intensity based on Powell et al. (2016) cut-points
         self.powell_cutpoints()
@@ -102,6 +111,13 @@ class WristModel:
             if epoch >= 157 * sample_rate / 30:
                 self.epoch_intensity.append(3)
 
+        if self.valid_ecg is not None:
+            index_list = min([len(self.epoch_intensity), len(self.valid_ecg)])
+
+            self.epoch_intensity_valid = [self.epoch_intensity[i] if self.valid_ecg[i] == 0
+                                          else None for i in range(0, index_list)]
+
+        # MODEL TOTALS IF NOT CORRECTED USING VALID ECG EPOCHS -------------------------------------------------------
         # Intensity data: totals
         # In minutes and %
         self.intensity_totals = {"Sedentary": self.epoch_intensity.count(0) / epoch_to_minutes,
@@ -116,6 +132,21 @@ class WristModel:
                                  "Vigorous": self.epoch_intensity.count(3) / epoch_to_minutes,
                                  "Vigorous%": round(self.epoch_intensity.count(3) /
                                                     len(self.accel_object.epoch.svm), 3)}
+
+        # MODEL TOTALS IF CORRECTED USING VALID ECG EPOCHS -----------------------------------------------------------
+        # Intensity data: totals
+        # In minutes and %
+        if self.valid_ecg is not None:
+            n_valid_epochs = len(self.epoch_intensity_valid) - self.epoch_intensity_valid.count(None)
+
+            self.intensity_totals_valid = {"Sedentary": self.epoch_intensity_valid.count(0) / epoch_to_minutes,
+                                           "Sedentary%": round(self.epoch_intensity_valid.count(0) / n_valid_epochs, 3),
+                                           "Light": (self.epoch_intensity.count(1)) / epoch_to_minutes,
+                                           "Light%": round(self.epoch_intensity.count(1) / n_valid_epochs, 3),
+                                           "Moderate": self.epoch_intensity.count(2) / epoch_to_minutes,
+                                           "Moderate%": round(self.epoch_intensity.count(2) / n_valid_epochs, 3),
+                                           "Vigorous": self.epoch_intensity.count(3) / epoch_to_minutes,
+                                           "Vigorous%": round(self.epoch_intensity.count(3) / n_valid_epochs, 3)}
 
         print("Complete.")
 
@@ -141,7 +172,7 @@ class Ankle:
 
     def __init__(self, filepath=None, output_dir=None, rvo2=None, age=None, epoch_len=15,
                  start_offset=0, end_offset=0,
-                 remove_baseline=False,
+                 remove_baseline=False, ecg_object=None,
                  from_processed=True, treadmill_processed=False, treadmill_log_file=None,
                  processed_folder=None, write_results=False):
 
@@ -160,6 +191,8 @@ class Ankle:
         self.start_offset = start_offset
         self.end_offset = end_offset
         self.remove_baseline = remove_baseline
+
+        self.ecg_object = ecg_object
 
         self.from_processed = from_processed
         self.processed_folder = processed_folder
@@ -180,12 +213,13 @@ class Ankle:
         self.treadmill = Treadmill(subjectID=self.subjectID, ankle_object=self, tm_log_file=self.treadmill_log_file)
 
         # Create AnkleModel object
-        self.model = AnkleModel(ankle_object=self, treadmill_object=self.treadmill, write_results=self.write_results)
+        self.model = AnkleModel(ankle_object=self, treadmill_object=self.treadmill, write_results=self.write_results,
+                                ecg_object=self.ecg_object)
 
 
 class Treadmill:
 
-    def __init__(self, subjectID, ankle_object, tm_log_file, from_raw=False):
+    def __init__(self, subjectID, ankle_object, tm_log_file):
         """Class that stores treadmill protocol information from tracking spreadsheet.
            Imports protocol start time and each walks' speed. Stores this information in a dictionary.
            Calculates the index from the raw data which corresponds to the protocol start time.
@@ -194,8 +228,6 @@ class Treadmill:
         -subjectID: subject ID
         -ankle_object: AnkleAccel class instance
         -tm_logfile: spreadsheet that contains treadmill information (raw; not processed)
-        -from_raw: if True, user will have to manually select treadmill walks. If False, indexes from processed data
-                   will be read in
 
         :returns
         -treadmill_dict: information imported from treadmill protocol spreadsheet
@@ -206,19 +238,11 @@ class Treadmill:
         self.log_file = tm_log_file
         self.epoch_data = ankle_object.epoch.svm
         self.walk_indexes = []
-        self.from_raw = from_raw
 
         # Creates treadmill dictionary and walk speed data from spreadsheet data
         self.treadmill_dict, self.walk_speeds, self.walk_indexes = self.import_log(ankle_object=ankle_object)
 
         self.avg_walk_counts = self.calculate_average_counts()
-
-        """if self.from_raw:
-            # Manually selecting treadmill walks
-            if len(self.walk_indexes) != 10:
-                self.span = SpanSelector(ax=self.create_plot(accel_object=accel_object), onselect=self.select_walks,
-                                         direction='horizontal', useblit=True,
-                                         rectprops=dict(alpha=0.5, facecolor='grey'))"""
 
     def import_log(self, ankle_object):
         """Retrieves treadmill protocol information from spreadsheet for correct subject:
@@ -256,23 +280,6 @@ class Treadmill:
                     walk_indexes = []
                     print("\n" + "No previous treadmill processing found. ")
                     pass
-
-                # Retrieves data index that corresponds to 10 minutes before treadmill protocol start
-                # Finds correct timestamp and breaks loop
-                if self.from_raw:
-                    start_index = 0
-                    for i, stamp in enumerate(ankle_object.raw.timestamps):
-                        if stamp >= treadmill_dict["ProtocolTime"]:
-                            start_index = i - 10*60*ankle_object.raw.sample_rate
-                            break
-
-                # Start index not needed if reading from processed data
-                if not self.from_raw:
-                    # start_index = "N/A"
-                    start_index = 0
-
-                # Updates value in dictionary
-                treadmill_dict.update({"StartIndex": start_index})
 
         # Sets treadmill_dict, walk_indexes and walk_speeds to empty objects if no treadmill data found in log
         if not valid_data:
@@ -361,6 +368,13 @@ class Treadmill:
                     width=1.0, edgecolor='black', color='grey', alpha=0.75, align="edge")
             ax2.set_ylabel("Counts")
 
+            # Highlights treadmill walks
+            for start, stop in zip(self.walk_indexes[::2], self.walk_indexes[1::2]):
+                ax2.fill_betweenx(y=(0, max(ankle_object.epoch.svm[self.walk_indexes[0]-10:
+                                                                   self.walk_indexes[0] +
+                                                                   int(3600 / ankle_object.epoch_len)])),
+                                  x1=start, x2=stop, color='green', alpha=0.35)
+
             plt.show()
 
         # If raw data not available
@@ -404,7 +418,7 @@ class Treadmill:
 
 class AnkleModel:
 
-    def __init__(self, ankle_object, treadmill_object, write_results=False):
+    def __init__(self, ankle_object, treadmill_object, write_results=False, ecg_object=None):
         """Class that stores ankle model data. Performs regression analysis on activity counts vs. gait speed.
         Predicts gait speed and METs from activity counts using ACSM equation that predicts VO2 from gait speed.
 
@@ -425,6 +439,11 @@ class AnkleModel:
         self.walk_indexes = None
         self.write_results = write_results
 
+        if ecg_object is not None:
+            self.valid_ecg = ecg_object.epoch_validity
+        if ecg_object is None:
+            self.valid_ecg = None
+
         self.output_dir = ankle_object.output_dir
         self.anklemodel_outfile = self.output_dir + "Model Output/" + "{}_IntensityData.csv".format(self.file_id)
 
@@ -442,6 +461,8 @@ class AnkleModel:
         # Predicted outcome measures from regression
         self.predicted_speed = self.predict_speed(input_data=self.epoch_data)
         self.predicted_mets = self.predict_mets()
+        self.epoch_intensity_valid = None
+        self.intensity_totals_valid = None
         self.epoch_intensity, self.intensity_totals = self.calculate_intensity()
 
         if self.write_results:
@@ -613,6 +634,26 @@ class AnkleModel:
             if met >= 6.0:
                 intensity.append(3)
 
+        # Conversion factor: epochs to minutes
+        epoch_to_minutes = 60 / self.epoch_len
+
+        if self.valid_ecg is not None:
+            index_list = min([len(intensity), len(self.valid_ecg)])
+
+            self.epoch_intensity_valid = [intensity[i] if self.valid_ecg[i] == 0
+                                          else None for i in range(0, index_list)]
+
+            n_valid_epochs = len(self.epoch_intensity_valid) - self.epoch_intensity_valid.count(None)
+
+            self.intensity_totals_valid = {"Sedentary": self.epoch_intensity_valid.count(0) / epoch_to_minutes,
+                                           "Sedentary%": round(self.epoch_intensity_valid.count(0) / n_valid_epochs, 3),
+                                           "Light": (self.epoch_intensity_valid.count(1)) / epoch_to_minutes,
+                                           "Light%": round(self.epoch_intensity_valid.count(1) / n_valid_epochs, 3),
+                                           "Moderate": self.epoch_intensity_valid.count(2) / epoch_to_minutes,
+                                           "Moderate%": round(self.epoch_intensity_valid.count(2) / n_valid_epochs, 3),
+                                           "Vigorous": self.epoch_intensity_valid.count(3) / epoch_to_minutes,
+                                           "Vigorous%": round(self.epoch_intensity_valid.count(3) / n_valid_epochs, 3)}
+
         # Calculates time spent in each intensity category
         intensity_totals = {"Sedentary": intensity.count(0) / (60 / self.epoch_len),
                             "Sedentary%": round(intensity.count(0) / len(self.epoch_data), 3),
@@ -621,8 +662,7 @@ class AnkleModel:
                             "Moderate": intensity.count(2) / (60 / self.epoch_len),
                             "Moderate%": round(intensity.count(2) / len(self.epoch_data), 3),
                             "Vigorous": intensity.count(3) / (60 / self.epoch_len),
-                            "Vigorous%": round(intensity.count(3) / len(self.epoch_data), 3)
-                            }
+                            "Vigorous%": round(intensity.count(3) / len(self.epoch_data), 3)}
 
         print("\n" + "ANKLE MODEL SUMMARY")
         print("Sedentary: {} minutes ({}%)".format(intensity_totals["Sedentary"],

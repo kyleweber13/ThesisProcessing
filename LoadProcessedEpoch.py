@@ -31,10 +31,3 @@ def import_processed_accel(GENEActiv_object, processed_data_folder):
         counts = [float(i) for i in svm]
 
         return stamps, epoch_len, counts, pred_speed, pred_mets, epoch_intensity
-
-
-"""np.loadtxt(fname="/Users/kyleweber/Desktop/Data/OND07/Processed Data/Model Output/OND07_WTL_3037_01_GA_LAnkle_Accelerometer_IntensityData.csv",
-           delimiter=",", skiprows=1,
-           usecols=(0, 1, 2, 3, 4), unpack=True, dtype="str")
-
-stamps = [datetime.strptime(i[:-3], "%Y-%m-%dT%H:%M:%S.%f") for i in a]"""

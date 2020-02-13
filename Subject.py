@@ -26,6 +26,10 @@ class Subject:
 
         processing_start = datetime.now()
 
+        self.wrist = None
+        self.ankle = None
+        self.ecg = None
+
         self.wrist_filepath = wrist_filepath
         self.ankle_filepath = ankle_filepath
         self.ecg_filepath = ecg_filepath
@@ -60,26 +64,12 @@ class Subject:
         self.demographics = ImportDemographics.import_demographics(demographics_file=self.demographics_file,
                                                                    subjectID=self.subjectID)
 
-        self.start_offset_dict = DeviceSync.crop_start(subject_object=self)
-        self.end_offset_dict = DeviceSync.crop_end(subject_object=self)
-
-        # Objects from Accelerometer script
-        if self.wrist_filepath is not None:
-            self.wrist = Accelerometer.Wrist(filepath=self.wrist_filepath,output_dir=self.output_dir,
-                                             processed_folder=self.processed_folder, from_processed=self.from_processed,
-                                             write_results=self.write_results,
-                                             start_offset=self.start_offset_dict["Wrist"],
-                                             end_offset=self.end_offset_dict["Wrist"])
-
-        if self.ankle_filepath is not None:
-            self.ankle = Accelerometer.Ankle(filepath=self.ankle_filepath, output_dir=self.output_dir,
-                                             remove_baseline=self.remove_epoch_baseline,
-                                             processed_folder=self.processed_folder, from_processed=self.from_processed,
-                                             treadmill_processed=True, treadmill_log_file=self.treadmill_log_file,
-                                             write_results=self.write_results,
-                                             start_offset=self.start_offset_dict["Ankle"],
-                                             end_offset=self.end_offset_dict["Ankle"],
-                                             age=self.demographics["Age"], rvo2=self.demographics["RestVO2"])
+        if not self.from_processed:
+            self.start_offset_dict = DeviceSync.crop_start(subject_object=self)
+            self.end_offset_dict = DeviceSync.crop_end(subject_object=self)
+        if self.from_processed:
+            self.start_offset_dict = {"Ankle": 0, "Wrist": 0, "ECG": 0}
+            self.end_offset_dict = {"Ankle": 0, "Wrist": 0, "ECG": 0}
 
         if self.ecg_filepath is not None:
             self.ecg = ECG.ECG(filepath=self.ecg_filepath,
@@ -90,8 +80,28 @@ class Subject:
                                age=self.demographics["Age"],
                                rest_hr_window=self.rest_hr_window)
 
+        # Objects from Accelerometer script
+        if self.wrist_filepath is not None:
+            self.wrist = Accelerometer.Wrist(filepath=self.wrist_filepath,output_dir=self.output_dir,
+                                             processed_folder=self.processed_folder, from_processed=self.from_processed,
+                                             write_results=self.write_results,
+                                             start_offset=self.start_offset_dict["Wrist"],
+                                             end_offset=self.end_offset_dict["Wrist"],
+                                             ecg_object=self.ecg)
+
+        if self.ankle_filepath is not None:
+            self.ankle = Accelerometer.Ankle(filepath=self.ankle_filepath, output_dir=self.output_dir,
+                                             remove_baseline=self.remove_epoch_baseline,
+                                             processed_folder=self.processed_folder, from_processed=self.from_processed,
+                                             treadmill_processed=True, treadmill_log_file=self.treadmill_log_file,
+                                             write_results=self.write_results,
+                                             start_offset=self.start_offset_dict["Ankle"],
+                                             end_offset=self.end_offset_dict["Ankle"],
+                                             age=self.demographics["Age"], rvo2=self.demographics["RestVO2"],
+                                             ecg_object=self.ecg)
+
         # self.valid_ankle, self.valid_wrist, self.valid_ecg = self.locate_all_valid_data()
-        self.stats = ModelStats.Stats(subject_object=self)
+        # self.stats = ModelStats.Stats(subject_object=self)
 
         processing_end = datetime.now()
         print("======================================================================================================")
@@ -100,19 +110,6 @@ class Subject:
 
         if self.plot_data:
             self.plot_epoched()
-
-    def locate_all_valid_data(self):
-        """Method that creates subsets of data that represent only epochs where all devices provided valid data."""
-
-        ankle_data = self.ankle.model.epoch_intensity[0:-self.start_offset_dict["Ankle"]]
-        wrist_data = self.wrist.model.epoch_intensity[0:-self.start_offset_dict["Wrist"]]
-        ecg_data = self.ecg.valid_hr[0:-self.start_offset_dict["ECG"]]
-
-        valid_ankle = [ankle_data[i] if self.ecg.epoch_validity[i] == 0 else None for i in range(len(ankle_data))]
-        valid_wrist = [wrist_data[i] if self.ecg.epoch_validity[i] == 0 else None for i in range(len(wrist_data))]
-        valid_ecg = ecg_data
-
-        return valid_ankle, valid_wrist, valid_ecg
 
     def plot_epoched(self):
         """Plots epoched wrist, ankle, and HR data on 3 subplots."""
@@ -223,22 +220,21 @@ x = Subject(ankle_filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_30
             treadmill_processed=True,
             treadmill_log_file="/Users/kyleweber/Desktop/Data/OND07/Treadmill_Log.csv",
 
-            wrist_filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3037_01_GA_LWrist_Accelerometer.EDF",
+            # wrist_filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3037_01_GA_LWrist_Accelerometer.EDF",
 
             remove_epoch_baseline=True,
 
             ecg_filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3037_01_BF.EDF",
             rest_hr_window=60,
-            load_raw_ecg=False,
+            load_raw_ecg=True,
 
             epoch_len=15,
             demographics_file="/Users/kyleweber/Desktop/Data/OND07/Participant Information/Demographics_Data.csv",
 
             output_dir="/Users/kyleweber/Desktop/Data/OND07/Processed Data/",
-            from_processed=True,
+            from_processed=False,
 
             write_results=False,
             plot_data=False)
 
 # TO DO
-# Re-run with write_results

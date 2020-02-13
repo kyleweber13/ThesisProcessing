@@ -180,6 +180,8 @@ class ECG:
             except ValueError:
                 epoch_timestamps_formatted.append(datetime.strptime(epoch.split(".")[0], "%Y-%m-%d %H:%M:%S"))
 
+        print("Ecg.load_processed - epoch_timestamps: len={}".format(len(epoch_timestamps)))
+
         epoch_validity = [int(i) for i in epoch_validity]
         epoch_hr = [round(float(i), 2) for i in epoch_hr]
 
@@ -249,7 +251,7 @@ class ECG:
 
         # A single epoch's HR can be below resting HR based on its definition
         # Changes any negative values to 0
-        perc_hrr = [i if i >= 0 else 0 for i in perc_hrr if i is not None]
+        # perc_hrr = [i if i >= 0 or i is None else 0 for i in perc_hrr if i is not None]
 
         return perc_hrr
 
