@@ -36,7 +36,7 @@ class GENEActiv:
 
         t0 = datetime.now()  # Gets current time
 
-        print("====================================================================================================")
+        print("=====================================================================================================")
         print("Importing {}...".format(self.filepath))
 
         # READS IN ACCELEROMETER DATA ================================================================================
@@ -184,14 +184,10 @@ class Bittium:
 
         print("\n" + "Creating timestamps...")
 
-        # FORMATTING NEEDS WORK
+        # Timestamps
         end_time = self.starttime + timedelta(seconds=len(self.raw)/self.sample_rate)
         self.timestamps = np.asarray(pd.date_range(start=self.starttime, end=end_time, periods=len(self.raw)))
         self.epoch_timestamps = self.timestamps[::self.epoch_len * self.sample_rate]
-
-        # CORRECT FORMATTING
-        # self.timestamps = [self.starttime + timedelta(seconds=i/self.sample_rate) for i in range(len(self.raw))]
-        # self.epoch_timestamps = [self.timestamps[::self.epoch_len*self.sample_rate]]
 
         t1_stamp = datetime.now()
         stamp_time = (t1_stamp - t0_stamp).seconds

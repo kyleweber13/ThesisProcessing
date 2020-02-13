@@ -16,7 +16,7 @@ def crop_start(subject_object):
     """
 
     print()
-    print("======================================= DEVICE SYNCRONIZATION =======================================")
+    print("======================================== DEVICE SYNCRONIZATION ======================================")
 
     print("\n" + "Performing device sync...")
 
@@ -154,9 +154,6 @@ def crop_end(subject_object):
     -subject_object: object of class Subject. Needs to contain start_offset_dict from crop_start function.
     """
 
-    print()
-    print("====================================== CROPPING ENDS OF FILES =======================================")
-
     print("\n" + "Cropping data so each device has the same file duration...")
 
     # Booleans for whether data exists or not
@@ -176,7 +173,7 @@ def crop_end(subject_object):
         ankle_end = ankle_start + timedelta(seconds=ankle_duration)
     if not ankle_exists:
         ankle_samplerate = 1
-        ankle_duration = None
+        ankle_duration = 0
         ankle_start = None
         ankle_end = None
 
@@ -189,7 +186,7 @@ def crop_end(subject_object):
 
     if not wrist_exists:
         wrist_samplerate = 1
-        wrist_duration = None
+        wrist_duration = 0
         wrist_start = None
         wrist_end = None
 
@@ -201,7 +198,7 @@ def crop_end(subject_object):
         ecg_end = ecg_start + timedelta(seconds=ecg_duration)
     if not ecg_exists:
         ecg_samplerate = 1
-        ecg_duration = None
+        ecg_duration = 0
 
     # Values by which data is cropped at the end (indexes): default values
     ankle_end_offset = 0
@@ -291,6 +288,10 @@ def crop_end(subject_object):
 
     end_crop_dict = {"Ankle": ankle_duration * ankle_samplerate - ankle_end_offset,
                      "Wrist": wrist_duration * wrist_samplerate - wrist_end_offset,
-                     "ECG": ecg_duration * wrist_samplerate - ecg_end_offset}
+                     "ECG": ecg_duration * ecg_samplerate - ecg_end_offset}
+
+    print("File end offsets: Ankle = {}, Wrist = {}, ECG = {}".format(ankle_end_offset,
+                                                                      wrist_end_offset,
+                                                                      ecg_end_offset))
 
     return end_crop_dict

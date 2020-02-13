@@ -10,6 +10,7 @@ import scipy.stats as stats
 from datetime import datetime
 import csv
 import progressbar
+from matplotlib.ticker import PercentFormatter
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -169,13 +170,22 @@ class ECG:
                                                                 delimiter=",", skiprows=1, usecols=(0, 1, 2),
                                                                 unpack=True, dtype="str")
 
-        epoch_timestamps = [datetime.strptime(i, "%Y-%m-%d %H:%M:%S") for i in epoch_timestamps]
+        # epoch_timestamps = [datetime.strptime(i, "%Y-%m-%d %H:%M:%S") for i in epoch_timestamps]
+        # epoch_timestamps = [datetime.strptime(i[:-3], "%Y-%m-%dT%H:%M:%S.%f") for i in epoch_timestamps]
+
+        epoch_timestamps_formatted = []
+        for epoch in epoch_timestamps:
+            try:
+                epoch_timestamps_formatted.append(datetime.strptime(epoch[:-3], "%Y-%m-%dT%H:%M:%S.%f"))
+            except ValueError:
+                epoch_timestamps_formatted.append(datetime.strptime(epoch.split(".")[0], "%Y-%m-%d %H:%M:%S"))
+
         epoch_validity = [int(i) for i in epoch_validity]
         epoch_hr = [round(float(i), 2) for i in epoch_hr]
 
         print("Complete.")
 
-        return epoch_timestamps, epoch_validity, epoch_hr
+        return epoch_timestamps_formatted, epoch_validity, epoch_hr
 
     def find_resting_hr(self, window_size=60, show_plot=False):
         """Function that calculates a rolling average HR over specified time interval and locate its minimum.
@@ -204,17 +214,18 @@ class ECG:
 
         # Plots epoch-by-epoch and rolling average HRs with resting HR location marked
         if show_plot:
+
             plt.title("Resting Heart Rate")
 
             plt.plot(self.epoch_timestamps, self.valid_hr, color='black',
                      label="Epoch-by-Epoch ({}-sec)".format(self.epoch_len))
 
-            plt.plot(self.epoch_timestamps[0:len(rolling_avg)], rolling_avg, color='blue',
+            plt.plot(self.epoch_timestamps[0:len(rolling_avg)], rolling_avg, color='red',
                      label="Rolling average ({}-sec)".format(window_size))
 
             plt.ylim(40, 200)
 
-            plt.axvline(x=self.epoch_timestamps[min_index], color='red', linestyle='dashed',
+            plt.axvline(x=self.epoch_timestamps[min_index], color='green', linestyle='dashed',
                         label="Rest HR ({} bpm)".format(round(resting_hr, 1)))
 
             plt.fill_between(x=self.epoch_timestamps, y1=(mean_hr - 1.96 * sd_hr), y2=(mean_hr + 1.96 * sd_hr),
@@ -235,6 +246,10 @@ class ECG:
 
         perc_hrr = [100 * (hr - self.rest_hr) / (hr_max - self.rest_hr) if hr
                     is not None else None for hr in self.valid_hr]
+
+        # A single epoch's HR can be below resting HR based on its definition
+        # Changes any negative values to 0
+        perc_hrr = [i if i >= 0 else 0 for i in perc_hrr if i is not None]
 
         return perc_hrr
 
@@ -294,14 +309,40 @@ class ECG:
 
         return intensity, intensity_totals
 
+    def plot_histogram(self):
+        """Generates a histogram of heart rates over the course of the collection with a bin width of 5 bpm."""
+
+        # Only valid HRs
+        valid_heartrates = [i for i in self.valid_hr if i is not None]
+        avg_hr = sum(valid_heartrates) / len(valid_heartrates)
+
+        # Bins of width 5bpm between 40 and 180 bpm
+        n_bins = np.arange(40, 180, 5)
+
+        plt.figure(figsize=(10, 7))
+        plt.hist(valid_heartrates, weights=np.ones(len(valid_heartrates)) / len(valid_heartrates), bins=n_bins,
+                 edgecolor='black', color='grey')
+        plt.axvline(x=avg_hr, color='red', linestyle='dashed', label="Average HR ({} bpm)".format(round(avg_hr, 1)))
+        plt.axvline(x=self.rest_hr, color='green', linestyle='dashed',
+                    label='Calculated resting HR ({} bpm)'.format(round(self.rest_hr, 1)))
+
+        plt.gca().yaxis.set_major_formatter(PercentFormatter(1))
+
+        plt.ylabel("% of Epochs")
+        plt.xlabel("HR (bpm)")
+        plt.title("Heart Rate Histogram")
+        plt.legend(loc='upper left')
+        plt.show()
+
     def write_output(self):
         """Writes csv of epoched timestamps, validity category."""
 
         with open(self.output_dir + "Model Output/" + self.filename + "_IntensityData.csv", "w") as outfile:
             writer = csv.writer(outfile, delimiter=',', lineterminator="\n")
 
-            writer.writerow(["Timestamp", "Validity(1=invalid)", "AverageHR"])
-            writer.writerows(zip(self.epoch_timestamps, self.epoch_validity, self.epoch_hr))
+            writer.writerow(["Timestamp", "Validity(1=invalid)", "AverageHR", "%HRR", "IntensityCategory"])
+            writer.writerows(zip(self.epoch_timestamps, self.epoch_validity, self.epoch_hr,
+                                 self.perc_hrr, self.epoch_intensity))
 
         print("\n" + "Complete. File {} saved.".format(self.output_dir + "Model Output/" +
                                                        self.filename + "_IntensityData.csv"))

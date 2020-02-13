@@ -4,6 +4,7 @@ import ECG
 import DeviceSync
 import SleepLog
 import NonWearLog
+import ModelStats
 
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -90,6 +91,7 @@ class Subject:
                                rest_hr_window=self.rest_hr_window)
 
         # self.valid_ankle, self.valid_wrist, self.valid_ecg = self.locate_all_valid_data()
+        self.stats = ModelStats.Stats(subject_object=self)
 
         processing_end = datetime.now()
         print("======================================================================================================")
@@ -124,8 +126,9 @@ class Subject:
 
         # WRIST
         try:
-            ax1.plot(self.wrist.epoch.timestamps, self.wrist.epoch.svm, color='black', label="Wrist Acc.")
-            ax1.axhline(y=0, linestyle='dashed', color='red')
+            ax1.plot(self.wrist.epoch.timestamps[0:len(self.wrist.epoch.svm)],
+                     self.wrist.epoch.svm[0:len(self.wrist.epoch.timestamps)], color='#606060', label="Wrist Acc.")
+            ax1.axhline(y=0, color='black', linewidth=1)
             ax1.legend(loc='upper left')
             ax1.set_ylabel("Counts")
         except AttributeError:
@@ -133,8 +136,9 @@ class Subject:
 
         # ANKLE
         try:
-            ax2.plot(self.ankle.epoch.timestamps, self.ankle.epoch.svm, color='black', label="Ankle Acc.")
-            ax2.axhline(y=0, linestyle='dashed', color='red')
+            ax2.plot(self.ankle.epoch.timestamps[0:len(self.ankle.epoch.svm)],
+                     self.ankle.epoch.svm[0:len(self.ankle.epoch.svm)], color='#606060', label="Ankle Acc.")
+            ax2.axhline(y=0, color='black', linewidth=1)
             ax2.legend(loc='upper left')
             ax2.set_ylabel("Counts")
         except AttributeError:
@@ -142,13 +146,16 @@ class Subject:
 
         # HEART RATE
         try:
-            ax3.plot(self.ecg.epoch_timestamps, self.ecg.valid_hr, color='blue',
+            ax3.plot(self.ecg.epoch_timestamps[0:len(self.ecg.valid_hr)],
+                     self.ecg.valid_hr[0:len(self.ecg.epoch_timestamps)], color='red',
                      label="HR ({} sec)".format(self.epoch_len))
-            ax3.plot(self.ecg.epoch_timestamps, self.ecg.rolling_avg_hr, color='black',
+            ax3.plot(self.ecg.epoch_timestamps[0:len(self.ecg.rolling_avg_hr)],
+                     self.ecg.rolling_avg_hr[0:len(self.ecg.epoch_timestamps)], color='black',
                      label="Rolling Average ({} sec)".format(self.rest_hr_window))
+
             ax3.axvline(x=self.ecg.epoch_timestamps[np.argwhere(np.asarray(self.ecg.rolling_avg_hr)
                                                                 == self.ecg.rest_hr)[0][0]],
-                        color='red', linestyle='dashed',
+                        color='#289CE1', linestyle='dashed',
                         label="Rest HR ({} bpm)".format(round(self.ecg.rest_hr, 1)))
 
             ax3.legend(loc='upper left')
@@ -222,13 +229,16 @@ x = Subject(ankle_filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_30
 
             ecg_filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3037_01_BF.EDF",
             rest_hr_window=60,
-            load_raw_ecg=True,
+            load_raw_ecg=False,
 
             epoch_len=15,
             demographics_file="/Users/kyleweber/Desktop/Data/OND07/Participant Information/Demographics_Data.csv",
 
             output_dir="/Users/kyleweber/Desktop/Data/OND07/Processed Data/",
-            from_processed=False,
+            from_processed=True,
 
-            write_results=True,
+            write_results=False,
             plot_data=False)
+
+# TO DO
+# Re-run with write_results

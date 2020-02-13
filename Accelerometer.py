@@ -330,40 +330,60 @@ class Treadmill:
 
         return start, end
 
-    @staticmethod
-    def plot_treadmill_protocol(ankle_object):
+    def plot_treadmill_protocol(self, ankle_object):
         """Plots raw and epoched data during treadmill protocol on subplots."""
 
-        raw_start = ankle_object.treadmill.treadmill_dict["StartIndex"]
-
-        # If StartIndex is N/A...
+        # If raw data vailable
         try:
-            epoch_start = int(raw_start / (ankle_object.raw.sample_rate * ankle_object.epoch_len))
-        except TypeError:
-            epoch_start = ankle_object.raw.sample_rate * ankle_object.epoch_len
+            raw_start = ankle_object.treadmill.treadmill_dict["StartIndex"]
 
-        # X-axis coordinates that correspond to epoch number
-        index_list = np.arange(0, 3600 * ankle_object.raw.sample_rate) / \
-                     ankle_object.raw.sample_rate / ankle_object.epoch_len
+            # If StartIndex is N/A...
+            try:
+                epoch_start = int(raw_start / (ankle_object.raw.sample_rate * ankle_object.epoch_len))
+            except TypeError:
+                epoch_start = ankle_object.raw.sample_rate * ankle_object.epoch_len
 
-        fig, (ax1, ax2) = plt.subplots(2, sharex="col", figsize=(10, 7))
+            # X-axis coordinates that correspond to epoch number
+            index_list = np.arange(0, 3600 * ankle_object.raw.sample_rate) / \
+                         ankle_object.raw.sample_rate / ankle_object.epoch_len
 
-        ax1.set_title("{}: Treadmill Protocol".format(ankle_object.filename))
+            fig, (ax1, ax2) = plt.subplots(2, sharex="col", figsize=(10, 7))
 
-        ax1.plot(index_list, ankle_object.raw.x[raw_start:raw_start + ankle_object.raw.sample_rate * 3600],
-                 color="black")
-        ax1.set_ylabel("G's")
+            ax1.set_title("{}: Treadmill Protocol".format(ankle_object.filename))
 
-        # Epoched data
-        """ax2.plot(index_list[::ankle_object.epoch_len*ankle_object.raw.sample_rate],
-                 ankle_object.epoch.svm[epoch_start:epoch_start + int(3600/ankle_object.epoch_len)],
-                 color='black', marker="o", markeredgecolor='black', markerfacecolor='red', markersize=4)"""
-        ax2.bar(index_list[::ankle_object.epoch_len * ankle_object.raw.sample_rate],
-                ankle_object.epoch.svm[epoch_start:epoch_start + int(3600 / ankle_object.epoch_len)],
-                width=1.0, edgecolor='black', color='grey', alpha=0.75, align="edge")
-        ax2.set_ylabel("Counts")
+            ax1.plot(index_list, ankle_object.raw.x[raw_start:raw_start + ankle_object.raw.sample_rate * 3600],
+                     color="black")
+            ax1.set_ylabel("G's")
 
-        plt.show()
+            # Epoched data
+            ax2.bar(index_list[::ankle_object.epoch_len * ankle_object.raw.sample_rate],
+                    ankle_object.epoch.svm[epoch_start:epoch_start + int(3600 / ankle_object.epoch_len)],
+                    width=1.0, edgecolor='black', color='grey', alpha=0.75, align="edge")
+            ax2.set_ylabel("Counts")
+
+            plt.show()
+
+        # If raw data not available
+        except (AttributeError, TypeError):
+
+            fig, ax1 = plt.subplots(1, figsize=(10, 7))
+
+            ax1.bar(np.arange(self.walk_indexes[0]-10, self.walk_indexes[0] + int(3600 / ankle_object.epoch_len), 1),
+                    ankle_object.epoch.svm[self.walk_indexes[0]-10:
+                                           self.walk_indexes[0] + int(3600 / ankle_object.epoch_len)],
+                    width=1.0, edgecolor='black', color='grey', alpha=0.75, align="edge")
+            ax1.set_ylabel("Counts")
+            ax1.set_xlabel("Epoch Number")
+            ax1.set_title("Participant {}: Treadmill Protocol - Epoched Data".format(ankle_object.subjectID))
+
+            # Highlights treadmill walks
+            for start, stop in zip(self.walk_indexes[::2], self.walk_indexes[1::2]):
+                ax1.fill_betweenx(y=(0, max(ankle_object.epoch.svm[self.walk_indexes[0]-10:
+                                                                   self.walk_indexes[0] +
+                                                                   int(3600 / ankle_object.epoch_len)])),
+                                  x1=start, x2=stop, color='green', alpha=0.35)
+
+            plt.show()
 
     def calculate_average_counts(self):
         """Calculates average counts per epoch from the ankle accelerometer.
