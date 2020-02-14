@@ -20,6 +20,11 @@ ECG QUALITY CHECK
   -Checking for time periods where ECG data is usable vs. unusable using an adapted algorithm from Orphanidou et al. (2015).
   -Calculates summary measures (% of time invalid, total invalid time, etc.)
 
+SLEEP DATA
+  -Reads in data from participant's sleep log
+  -Calculates basic metrics (time, % asleep, etc.)
+  -Marks epochs as awake, napping, or asleep (overnight)
+  
 DETERMINATION OF RESTING HEART RATE
   -Definition/method TBD
   
