@@ -6,19 +6,52 @@ import matplotlib.dates as mdates
 
 
 class SleepLog:
-    """Imports a participant's sleep log data and stores it as a dictionary.
+    """Imports a participant's sleep log data from .csv. Creates a list corresponding to epochs where participant was
+       awake vs. napping vs. asleep (overnight). Calculates total time spent in each state. Plots sleep periods
+       on ankle/wrist/HR data, if available.
 
     :argument
-    -subjectID: integer
+    -subject_object: object of class Subject
     -file_loc: folder that contains sleep logs
     """
 
-    def __init__(self, subjectID, accel_object, sleeplog_file, plot=False):
+    def __init__(self, subject_object, sleeplog_file, plot=False):
 
-        self.subjectID = subjectID
+        print()
+        print("=========================================== SLEEP LOG DATA ===========================================")
+
         self.file_loc = sleeplog_file
-        self.accel_object = accel_object
+        self.subject_object = subject_object
+        self.subjectID = self.subject_object.subjectID
         self.plot = plot
+
+        # Sets length of data (number of epochs) and timestamps based on any data that is available
+        try:
+            self.data_len = len(self.subject_object.ankle.epoch.svm)
+            self.epoch_timestamps = self.subject_object.ankle.epoch.timestamps
+        except AttributeError:
+            try:
+                self.data_len = len(self.subject_object.wrist.epoch.svm)
+                self.epoch_timestamps = self.subject_object.wrist.epoch.timestamps
+            except AttributeError:
+                self.data_len = len(self.subject_object.ecg.epoch_timestamps)
+                self.epoch_timestamps = self.subject_object.ecg.epoch_timestamps
+
+        # Imports epoched data if available
+        try:
+            self.ankle_svm = self.subject_object.ankle.epoch.svm
+        except AttributeError:
+            self.ankle_svm = None
+
+        try:
+            self.wrist_svm = self.subject_object.wrist.epoch.svm
+        except AttributeError:
+            self.wrist_svm = None
+
+        try:
+            self.hr = self.subject_object.ecg.valid_hr
+        except AttributeError:
+            self.hr = None
 
         # Imports sleep log data
         self.sleep_log = self.import_sleeplog()
@@ -27,13 +60,16 @@ class SleepLog:
         # Determines which epochs were asleep
         self.sleep_status = self.mark_sleep_epochs()
 
+        # Sleep report
+        self.sleep_report = self.generate_sleep_report()
+
         # Plots result
         if self.plot:
             self.plot_sleeplog()
 
     def import_sleeplog(self):
         """Imports sleep log from .csv. Returns as ndarray.
-        Column names: Date, TIME_OUT_BED, NAP_START, NAP_END, TIME_IN_BED
+           Column names: Date, TIME_OUT_BED, NAP_START, NAP_END, TIME_IN_BED
         """
 
         sleep_log = np.loadtxt(fname="{}{}_SleepLog.csv".format(self.file_loc, self.subjectID), delimiter=",",
@@ -80,60 +116,197 @@ class SleepLog:
         return all_data
 
     def mark_sleep_epochs(self):
-
-        epoch_index = 0
+        """Creates a list of len(epoch_timestamps) where awake is coded as 0, naps coded as 1, and
+           overnight sleep coded as 2"""
 
         # Creates list of 0s corresponding to each epoch
-        epoch_list = np.zeros(len(self.accel_object.epoched.epoch))
+        epoch_list = np.zeros(self.data_len)
 
-        for i, epoch_stamp in enumerate(self.accel_object.epoched.epoch_timestamps):
+        for i, epoch_stamp in enumerate(self.epoch_timestamps):
             for asleep, awake in zip(self.sleep_data[:], self.sleep_data[1:]):
+                # Overnight sleep
                 if asleep[3] != "N/A" and awake[0] != "N/A":
                     if asleep[3] <= epoch_stamp <= awake[0]:
-                        epoch_list[i] = 500
+                        epoch_list[i] = 2
+                # Naps
+                if asleep[1] != "N/A" and asleep[2] != "N/A":
+                    if asleep[1] <= epoch_stamp <= asleep[2]:
+                        epoch_list[i] = 1
 
         return epoch_list
 
+    def generate_sleep_report(self):
+        """Generates summary sleep measures in minutes."""
+
+        epoch_to_mins = 60 / self.subject_object.epoch_len
+
+        sleep_durations = []
+        for asleep, awake in zip(self.sleep_data[:], self.sleep_data[1:]):
+            sleep_durations.append(round((awake[0] - asleep[3]).seconds / 60, 2))
+
+        nap_durations = []
+        for data in self.sleep_data:
+            if data[1] != "N/A" and data[2] != "N/A":
+                nap_durations.append(round((data[2] - data[1]).seconds / 60, 2))
+
+        sleep_report = {"SleepDuration": np.sum(self.sleep_status > 0) / epoch_to_mins,
+                        "Sleep%": round(100 * np.sum(self.sleep_status > 0) / len(self.epoch_timestamps), 1),
+
+                        "OvernightSleepDuration": np.sum(self.sleep_status == 2) / epoch_to_mins,
+                        "OvernightSleepDurations": sleep_durations,
+                        "OvernightSleep%": round(100 * np.sum(self.sleep_status == 2) / len(self.epoch_timestamps), 1),
+                        "AvgSleepDuration": round(sum(sleep_durations) / len(sleep_durations), 1),
+
+                        "NapDuration": np.sum(self.sleep_status == 1) / epoch_to_mins,
+                        "NapDurations": nap_durations,
+                        "Nap%": round(100 * np.sum(self.sleep_status == 1) / len(self.epoch_timestamps), 1),
+                        "AvgNapDuration": round(sum(nap_durations) / len(nap_durations), 1)
+                        if len(nap_durations) != 0 else 0
+                        }
+
+        print("\n" + "SLEEP REPORT:")
+
+        print("-Total time asleep: {} minutes ({}%)".format(sleep_report["SleepDuration"], sleep_report["Sleep%"]))
+
+        print("\n" + "-Total overnight sleep: {} minutes ({}%)".format(sleep_report["OvernightSleepDuration"],
+                                                                       sleep_report["OvernightSleep%"]))
+        print("-Overnight sleep durations: {} minutes".format(sleep_report["OvernightSleepDurations"]))
+        print("-Average overnight sleep duration: {} minutes".format(sleep_report["AvgSleepDuration"]))
+
+        print("\n" + "-Total napping time: {} minutes ({}%)".format(sleep_report["NapDuration"], sleep_report["Nap%"]))
+        print("-Nap durations: {} minutes".format(sleep_report["NapDurations"]))
+        print("-Average nap duration: {} minutes".format(sleep_report["AvgNapDuration"]))
+
+        return sleep_report
+
     def plot_sleeplog(self):
-        """Plots epoched accelerometer data with vertical lines marking sleep log data"""
+        """Plots epoched accelerometer data with shaded regions marking sleep log data.
+           Plots ankle/wrist/HR data if available"""
 
         xfmt = mdates.DateFormatter("%a, %I:%M %p")
         locator = mdates.HourLocator(byhour=[0, 12], interval=1)
 
-        fig, ax1 = plt.subplots(1, figsize=(12, 7))
+        fig, (ax1, ax2, ax3) = plt.subplots(3, sharex='col', figsize=(12, 7))
 
-        plt.title("Subject {}: Sleep Log Data (green = sleep; red = nap)".format(self.subjectID))
+        ax1.set_title("Subject {}: Sleep Log Data (green = sleep; red = nap)".format(self.subjectID))
 
-        ax1.plot(self.accel_object.epoched.epoch_timestamps[0:len(self.accel_object.epoched.epoch)],
-                 self.accel_object.epoched.epoch[0:len(self.accel_object.epoched.epoch_timestamps)], color='black')
+        # WRIST ACCELEROMETER ----------------------------------------------------------------------------------------
+        try:
+            ax1.plot(self.epoch_timestamps, self.wrist_svm, label="Wrist", color='black')
+            ax1.legend(loc='upper left')
 
-        plt.ylabel("Counts")
-        ax1.xaxis.set_major_formatter(xfmt)
-        ax1.xaxis.set_major_locator(locator)
+            ax1.set_ylabel("Counts")
+
+            for day in self.sleep_data:
+                for index, value in enumerate(day):
+                    if value != "N/A":
+                        if index == 0:
+                            ax1.axvline(x=value, color="green", label="Woke up")
+
+                        if index == 3:
+                            ax1.axvline(x=value, color="green", label="To bed")
+
+                        if index == 1:
+                            ax1.axvline(x=value, color="red", label="Nap")
+
+                        if index == 2:
+                            ax1.axvline(x=value, color="red", label="Wake up from nap")
+
+            # Fills in region where participant was asleep
+            for day1, day2 in zip(self.sleep_data[:], self.sleep_data[1:]):
+                try:
+                    # Overnight --> green
+                    ax1.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, max(self.wrist_svm)),
+                                      color='green', alpha=0.35)
+
+                    # Naps --> red
+                    ax1.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, max(self.wrist_svm)),
+                                      color='red', alpha=0.35)
+                except AttributeError:
+                    pass
+
+        except (AttributeError, TypeError):
+            pass
+
+        # ANKLE ACCELEROMETER ----------------------------------------------------------------------------------------
+        try:
+            ax2.plot(self.epoch_timestamps, self.ankle_svm, label='Ankle', color='black')
+            ax2.legend(loc='upper left')
+            ax2.set_ylabel("Counts")
+
+            for day in self.sleep_data:
+                for index, value in enumerate(day):
+                    if value != "N/A":
+                        if index == 0:
+                            ax2.axvline(x=value, color="green", label="Woke up")
+
+                        if index == 3:
+                            ax2.axvline(x=value, color="green", label="To bed")
+
+                        if index == 1:
+                            ax2.axvline(x=value, color="red", label="Nap")
+
+                        if index == 2:
+                            ax2.axvline(x=value, color="red", label="Wake up from nap")
+
+            # Fills in region where participant was asleep
+            for day1, day2 in zip(self.sleep_data[:], self.sleep_data[1:]):
+                try:
+                    # Overnight --> green
+                    ax2.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, max(self.ankle_svm)),
+                                      color='green', alpha=0.35)
+
+                    # Naps --> red
+                    ax2.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, max(self.ankle_svm)),
+                                      color='red', alpha=0.35)
+
+                except AttributeError:
+                    pass
+
+        except (AttributeError, TypeError):
+            pass
+
+        # HEART RATE -------------------------------------------------------------------------------------------------
+
+        try:
+            ax3.plot(self.epoch_timestamps[:len(self.hr)], self.hr[:len(self.epoch_timestamps)],
+                     label='HR', color='black')
+            ax3.legend(loc='upper left')
+            ax3.set_ylabel("HR (bpm)")
+
+            for day in self.sleep_data:
+                for index, value in enumerate(day):
+                    if value != "N/A":
+                        if index == 0:
+                            ax3.axvline(x=value, color="green", label="Woke up")
+
+                        if index == 3:
+                            ax3.axvline(x=value, color="green", label="To bed")
+
+                        if index == 1:
+                            ax3.axvline(x=value, color="red", label="Nap")
+
+                        if index == 2:
+                            ax3.axvline(x=value, color="red", label="Wake up from nap")
+
+            # Fills in region where participant was asleep
+            for day1, day2 in zip(self.sleep_data[:], self.sleep_data[1:]):
+                try:
+                    # Overnight --> green
+                    ax3.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(min([i for i in self.hr if i is not None]),
+                                                                          max([i for i in self.hr if i is not None])),
+                                      color='green', alpha=0.35)
+
+                    # Naps --> red
+                    ax3.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(min([i for i in self.hr if i is not None]),
+                                                                          max([i for i in self.hr if i is not None])),
+                                      color='red', alpha=0.35)
+                except AttributeError:
+                    pass
+
+        except (AttributeError, TypeError, ValueError):
+            pass
+
+        ax3.xaxis.set_major_formatter(xfmt)
+        ax3.xaxis.set_major_locator(locator)
         plt.xticks(rotation=45, fontsize=8)
-
-        for day in self.sleep_data:
-            for index, value in enumerate(day):
-                if value != "N/A":
-                    if index == 0:
-                        plt.axvline(x=value, color="green", label="Woke up")
-                    if index == 3:
-                        plt.axvline(x=value, color="green", label="To bed")
-
-                    if index == 1:
-                        plt.axvline(x=value, color="red", label="Nap")
-                    if index == 2:
-                        plt.axvline(x=value, color="red", label="Wake up from nap")
-
-        # Fills in region where participant was asleep
-        for day1, day2 in zip(self.sleep_data[:], self.sleep_data[1:]):
-            try:
-                # Overnight --> green
-                plt.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, max(self.accel_object.epoched.epoch)),
-                                  color='green', alpha=0.35)
-
-                # Naps --> red
-                plt.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, max(self.accel_object.epoched.epoch)),
-                                  color='red', alpha=0.35)
-            except AttributeError:
-                pass

@@ -105,8 +105,3 @@ class Data:
                                  color='green', alpha=0.15)
         except:
             pass
-
-
-x = Data(accel_filepath="/Users/kyleweber/Desktop/Data/Non-Wear/Test1_Accelerometer.EDF",
-         temperature_filepath="/Users/kyleweber/Desktop/Data/Non-Wear/Test1_Temperature.EDF",
-         log_filepath="/Users/kyleweber/Desktop/Data/Non-Wear/Test1.xlsx")

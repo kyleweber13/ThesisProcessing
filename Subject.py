@@ -22,7 +22,8 @@ class Subject:
                  epoch_len=15, remove_epoch_baseline=False, rest_hr_window=60,
                  filter_ecg=False, plot_data=False,
                  from_processed=True, load_raw_ecg=False, output_dir=None,
-                 write_results=False, treadmill_processed=False, treadmill_log_file=None, demographics_file=None):
+                 write_results=False, treadmill_processed=False, treadmill_log_file=None,
+                 demographics_file=None, sleeplog_folder=None):
 
         processing_start = datetime.now()
 
@@ -60,6 +61,7 @@ class Subject:
 
         self.treadmill_log_file = treadmill_log_file
         self.demographics_file = demographics_file
+        self.sleeplog_folder = sleeplog_folder
 
         self.demographics = ImportDemographics.import_demographics(demographics_file=self.demographics_file,
                                                                    subjectID=self.subjectID)
@@ -100,8 +102,10 @@ class Subject:
                                              age=self.demographics["Age"], rvo2=self.demographics["RestVO2"],
                                              ecg_object=self.ecg)
 
-        # self.valid_ankle, self.valid_wrist, self.valid_ecg = self.locate_all_valid_data()
-        # self.stats = ModelStats.Stats(subject_object=self)
+        self.sleep = SleepLog.SleepLog(subject_object=self,
+                                       sleeplog_file="/Users/kyleweber/Desktop/Data/OND07/Sleep Logs/")
+
+        self.stats = ModelStats.Stats(subject_object=self)
 
         processing_end = datetime.now()
         print("======================================================================================================")
@@ -169,23 +173,23 @@ class Subject:
         """Generates barplots of total activity minutes for each model.
         """
 
-        sedentary_minutes = [self.wrist.model.intensity_totals["Sedentary"],
-                             self.ankle.model.intensity_totals["Sedentary"],
+        sedentary_minutes = [self.wrist.model.intensity_totals_valid["Sedentary"],
+                             self.ankle.model.intensity_totals_valid["Sedentary"],
                              self.ecg.intensity_totals["Sedentary"],
                              0]
 
-        light_minutes = [self.wrist.model.intensity_totals["Light"],
-                         self.ankle.model.intensity_totals["Light"],
+        light_minutes = [self.wrist.model.intensity_totals_valid["Light"],
+                         self.ankle.model.intensity_totals_valid["Light"],
                          self.ecg.intensity_totals["Light"],
                          0]
 
-        moderate_minutes = [self.wrist.model.intensity_totals["Moderate"],
-                            self.ankle.model.intensity_totals["Moderate"],
+        moderate_minutes = [self.wrist.model.intensity_totals_valid["Moderate"],
+                            self.ankle.model.intensity_totals_valid["Moderate"],
                             self.ecg.intensity_totals["Moderate"],
                             0]
 
-        vigorous_minutes = [self.wrist.model.intensity_totals["Vigorous"],
-                            self.ankle.model.intensity_totals["Vigorous"],
+        vigorous_minutes = [self.wrist.model.intensity_totals_valid["Vigorous"],
+                            self.ankle.model.intensity_totals_valid["Vigorous"],
                             self.ecg.intensity_totals["Vigorous"],
                             0]
 
@@ -215,24 +219,40 @@ class Subject:
         plt.bar(["Wrist", "Ankle", "HR", "HR-Acc"], vigorous_minutes, color='red', edgecolor='black')
         plt.ylabel("Minutes")
 
+        print()
+        print("========================================= TOTAL ACTIVITY SUMMARY =====================================")
+        print("Sedentary: wrist = {} minutes, ankle = {} minutes, "
+              "HR = {} minutes, HR-Acc = {} minutes.".format(sedentary_minutes[0], sedentary_minutes[1],
+                                                             sedentary_minutes[2], sedentary_minutes[3]))
+        print("Light: wrist = {} minutes, ankle = {} minutes, "
+              "HR = {} minutes, HR-Acc = {} minutes.".format(light_minutes[0], light_minutes[1],
+                                                             light_minutes[2], light_minutes[3]))
+        print("Moderate: wrist = {} minutes, ankle = {} minutes, "
+              "HR = {} minutes, HR-Acc = {} minutes.".format(moderate_minutes[0], moderate_minutes[1],
+                                                             moderate_minutes[2], moderate_minutes[3]))
+        print("Vigorous: wrist = {} minutes, ankle = {} minutes, "
+              "HR = {} minutes, HR-Acc = {} minutes.".format(vigorous_minutes[0], vigorous_minutes[1],
+                                                             vigorous_minutes[2], vigorous_minutes[3]))
+
 
 x = Subject(ankle_filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3037_01_GA_LAnkle_Accelerometer.EDF",
             treadmill_processed=True,
             treadmill_log_file="/Users/kyleweber/Desktop/Data/OND07/Treadmill_Log.csv",
 
-            # wrist_filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3037_01_GA_LWrist_Accelerometer.EDF",
+            wrist_filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3037_01_GA_LWrist_Accelerometer.EDF",
 
             remove_epoch_baseline=True,
 
             ecg_filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3037_01_BF.EDF",
             rest_hr_window=60,
-            load_raw_ecg=True,
+            load_raw_ecg=False,
 
             epoch_len=15,
             demographics_file="/Users/kyleweber/Desktop/Data/OND07/Participant Information/Demographics_Data.csv",
+            sleeplog_folder="/Users/kyleweber/Desktop/Data/OND07/Sleep Logs/",
 
             output_dir="/Users/kyleweber/Desktop/Data/OND07/Processed Data/",
-            from_processed=False,
+            from_processed=True,
 
             write_results=False,
             plot_data=False)

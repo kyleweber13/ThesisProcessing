@@ -42,9 +42,14 @@ class GENEActiv:
         # READS IN ACCELEROMETER DATA ================================================================================
         file = pyedflib.EdfReader(self.filepath)
 
-        self.x = file.readSignal(chn=0, start=self.start_offset, n=self.end_offset)
-        self.y = file.readSignal(chn=1, start=self.start_offset, n=self.end_offset)
-        self.z = file.readSignal(chn=2, start=self.start_offset, n=self.end_offset)
+        if self.end_offset != 0:
+            self.x = file.readSignal(chn=0, start=self.start_offset, n=self.end_offset)
+            self.y = file.readSignal(chn=1, start=self.start_offset, n=self.end_offset)
+            self.z = file.readSignal(chn=2, start=self.start_offset, n=self.end_offset)
+        if self.end_offset == 0:
+            self.x = file.readSignal(chn=0, start=self.start_offset)
+            self.y = file.readSignal(chn=1, start=self.start_offset)
+            self.z = file.readSignal(chn=2, start=self.start_offset)
 
         # Calculates gravity-subtracted vector magnitude
         self.vm = [round(abs(math.sqrt(math.pow(self.x[i], 2) + math.pow(self.y[i], 2) +
