@@ -5,11 +5,14 @@ import DeviceSync
 import SleepLog
 import NonWearLog
 import ModelStats
+import FindValidEpochs
 
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import datetime
 import numpy as np
+from pandas.plotting import register_matplotlib_converters
+register_matplotlib_converters()
 
 # ====================================================================================================================
 # ================================================== SUBJECT CLASS ===================================================
@@ -30,6 +33,7 @@ class Subject:
         self.wrist = None
         self.ankle = None
         self.ecg = None
+        self.hracc = None  # Model not yet made
 
         self.wrist_filepath = wrist_filepath
         self.ankle_filepath = ankle_filepath
@@ -102,12 +106,18 @@ class Subject:
                                              age=self.demographics["Age"], rvo2=self.demographics["RestVO2"],
                                              ecg_object=self.ecg)
 
+        # Sleep data
         self.sleep = SleepLog.SleepLog(subject_object=self,
                                        sleeplog_file="/Users/kyleweber/Desktop/Data/OND07/Sleep Logs/")
 
+        # Creates subsets of data where only epochs where all data was valid are included
+        self.valid = FindValidEpochs.ValidData(subject_object=self, plot=self.plot_data)
+
+        # Runs statistical analysis
         self.stats = ModelStats.Stats(subject_object=self)
 
         processing_end = datetime.now()
+
         print("======================================================================================================")
         print("TOTAL PROCESSING TIME = {} SECONDS.".format(round((processing_end-processing_start).seconds, 1)))
         print("======================================================================================================")
@@ -255,6 +265,6 @@ x = Subject(ankle_filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_30
             from_processed=True,
 
             write_results=False,
-            plot_data=False)
+            plot_data=True)
 
 # TO DO

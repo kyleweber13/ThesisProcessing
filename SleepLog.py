@@ -164,7 +164,7 @@ class SleepLog:
                         if len(nap_durations) != 0 else 0
                         }
 
-        print("\n" + "SLEEP REPORT:")
+        print("\n" + "SLEEP REPORT")
 
         print("-Total time asleep: {} minutes ({}%)".format(sleep_report["SleepDuration"], sleep_report["Sleep%"]))
 
