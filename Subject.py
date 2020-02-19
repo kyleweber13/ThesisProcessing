@@ -7,6 +7,7 @@ import NonWearLog
 import ModelStats
 import FindValidEpochs
 
+import os
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import datetime
@@ -21,7 +22,9 @@ register_matplotlib_converters()
 
 class Subject:
 
-    def __init__(self, wrist_filepath=None, ankle_filepath=None, ecg_filepath=None,
+    def __init__(self, raw_edf_folder=None, subjectID=None,
+                 load_wrist=False, load_ankle=False, load_ecg=False,
+                 wrist_filepath=None, ankle_filepath=None, ecg_filepath=None,
                  epoch_len=15, remove_epoch_baseline=False, rest_hr_window=60,
                  filter_ecg=False, plot_data=False,
                  from_processed=True, load_raw_ecg=False, output_dir=None,
@@ -35,9 +38,19 @@ class Subject:
         self.ecg = None
         self.hracc = None  # Model not yet made
 
-        self.wrist_filepath = wrist_filepath
-        self.ankle_filepath = ankle_filepath
-        self.ecg_filepath = ecg_filepath
+        self.subjectID = subjectID
+        self.raw_edf_folder = raw_edf_folder
+        self.load_wrist = load_wrist
+        self.load_ankle = load_ankle
+        self.load_ecg = load_ecg
+        self.wrist_filepath, self.ankle_filepath, self.ecg_filepath = self.get_raw_filenames()
+        print(self.wrist_filepath)
+        print(self.ankle_filepath)
+        print(self.ecg_filepath)
+
+        # self.wrist_filepath = wrist_filepath
+        # self.ankle_filepath = ankle_filepath
+        # self.ecg_filepath = ecg_filepath
         self.filter_ecg = filter_ecg
         self.plot_data = plot_data
 
@@ -108,22 +121,44 @@ class Subject:
 
         # Sleep data
         self.sleep = SleepLog.SleepLog(subject_object=self,
-                                       sleeplog_file="/Users/kyleweber/Desktop/Data/OND07/Sleep Logs/")
+                                       sleeplog_file=self.sleeplog_folder)
 
         # Creates subsets of data where only epochs where all data was valid are included
-        self.valid = FindValidEpochs.ValidData(subject_object=self, plot=self.plot_data)
+        if self.load_wrist + self.load_ecg + self.load_ankle > 1:
+            self.valid = FindValidEpochs.ValidData(subject_object=self)
 
         # Runs statistical analysis
         self.stats = ModelStats.Stats(subject_object=self)
 
         processing_end = datetime.now()
 
+        print()
         print("======================================================================================================")
         print("TOTAL PROCESSING TIME = {} SECONDS.".format(round((processing_end-processing_start).seconds, 1)))
         print("======================================================================================================")
 
         if self.plot_data:
             self.plot_epoched()
+            self.valid.plot_validity_data()
+
+    def get_raw_filenames(self):
+
+        file_list = [i for i in os.listdir(self.raw_edf_folder) if ".EDF" in i and str(self.subjectID) in i]
+
+        wrist_filename = None
+        ankle_filename = None
+        ecg_filename = None
+
+        if self.load_wrist:
+            wrist_filename = [self.raw_edf_folder + i for i in file_list if "Wrist" in i][0]
+
+        if self.load_ankle:
+            ankle_filename = [self.raw_edf_folder + i for i in file_list if "Ankle" in i][0]
+
+        if self.load_ecg:
+            ecg_filename = [self.raw_edf_folder + i for i in file_list if "BF" in i][0]
+
+        return wrist_filename, ankle_filename, ecg_filename
 
     def plot_epoched(self):
         """Plots epoched wrist, ankle, and HR data on 3 subplots."""
@@ -183,24 +218,24 @@ class Subject:
         """Generates barplots of total activity minutes for each model.
         """
 
-        sedentary_minutes = [self.wrist.model.intensity_totals_valid["Sedentary"],
-                             self.ankle.model.intensity_totals_valid["Sedentary"],
-                             self.ecg.intensity_totals["Sedentary"],
+        sedentary_minutes = [self.valid.wrist_totals["Sedentary"],
+                             self.valid.ankle_totals["Sedentary"],
+                             self.valid.hr_totals["Sedentary"],
                              0]
 
-        light_minutes = [self.wrist.model.intensity_totals_valid["Light"],
-                         self.ankle.model.intensity_totals_valid["Light"],
-                         self.ecg.intensity_totals["Light"],
+        light_minutes = [self.valid.wrist_totals["Light"],
+                         self.valid.ankle_totals["Light"],
+                         self.valid.hr_totals["Light"],
                          0]
 
-        moderate_minutes = [self.wrist.model.intensity_totals_valid["Moderate"],
-                            self.ankle.model.intensity_totals_valid["Moderate"],
-                            self.ecg.intensity_totals["Moderate"],
+        moderate_minutes = [self.valid.wrist_totals["Moderate"],
+                            self.valid.ankle_totals["Moderate"],
+                            self.valid.hr_totals["Moderate"],
                             0]
 
-        vigorous_minutes = [self.wrist.model.intensity_totals_valid["Vigorous"],
-                            self.ankle.model.intensity_totals_valid["Vigorous"],
-                            self.ecg.intensity_totals["Vigorous"],
+        vigorous_minutes = [self.valid.wrist_totals["Vigorous"],
+                            self.valid.ankle_totals["Vigorous"],
+                            self.valid.hr_totals["Vigorous"],
                             0]
 
         plt.subplots(2, 2, figsize=(10, 7))
@@ -215,7 +250,6 @@ class Subject:
         plt.subplot(2, 2, 2)
         plt.title("Light Activity")
         plt.bar(["Wrist", "Ankle", "HR", "HR-Acc"], light_minutes, color='green', edgecolor='black')
-        plt.ylabel("Minutes")
 
         # Moderate activity
         plt.subplot(2, 2, 3)
@@ -227,14 +261,13 @@ class Subject:
         plt.subplot(2, 2, 4)
         plt.title("Vigorous Activity")
         plt.bar(["Wrist", "Ankle", "HR", "HR-Acc"], vigorous_minutes, color='red', edgecolor='black')
-        plt.ylabel("Minutes")
 
         print()
         print("========================================= TOTAL ACTIVITY SUMMARY =====================================")
         print("Sedentary: wrist = {} minutes, ankle = {} minutes, "
               "HR = {} minutes, HR-Acc = {} minutes.".format(sedentary_minutes[0], sedentary_minutes[1],
                                                              sedentary_minutes[2], sedentary_minutes[3]))
-        print("Light: wrist = {} minutes, ankle = {} minutes, "
+        print("Light:             wrist = {} minutes, ankle = {} minutes, "
               "HR = {} minutes, HR-Acc = {} minutes.".format(light_minutes[0], light_minutes[1],
                                                              light_minutes[2], light_minutes[3]))
         print("Moderate: wrist = {} minutes, ankle = {} minutes, "
@@ -245,15 +278,15 @@ class Subject:
                                                              vigorous_minutes[2], vigorous_minutes[3]))
 
 
-x = Subject(ankle_filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3037_01_GA_LAnkle_Accelerometer.EDF",
+x = Subject(raw_edf_folder="/Users/kyleweber/Desktop/Data/OND07/EDF/",
+            subjectID=3036,
+            load_ecg=False, load_ankle=True, load_wrist=False,
+
             treadmill_processed=True,
             treadmill_log_file="/Users/kyleweber/Desktop/Data/OND07/Treadmill_Log.csv",
 
-            wrist_filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3037_01_GA_LWrist_Accelerometer.EDF",
-
             remove_epoch_baseline=True,
 
-            ecg_filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3037_01_BF.EDF",
             rest_hr_window=60,
             load_raw_ecg=False,
 
@@ -262,9 +295,10 @@ x = Subject(ankle_filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_30
             sleeplog_folder="/Users/kyleweber/Desktop/Data/OND07/Sleep Logs/",
 
             output_dir="/Users/kyleweber/Desktop/Data/OND07/Processed Data/",
-            from_processed=True,
+            from_processed=False,
 
             write_results=False,
-            plot_data=True)
+            plot_data=False)
 
-# TO DO
+# More dict writers for results
+# Set threshold based on walking bout duration
