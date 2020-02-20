@@ -12,8 +12,10 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import datetime
 import numpy as np
+import warnings
 from pandas.plotting import register_matplotlib_converters
 register_matplotlib_converters()
+warnings.filterwarnings("ignore")
 
 # ====================================================================================================================
 # ================================================== SUBJECT CLASS ===================================================
@@ -24,8 +26,8 @@ class Subject:
 
     def __init__(self, raw_edf_folder=None, subjectID=None,
                  load_wrist=False, load_ankle=False, load_ecg=False,
-                 wrist_filepath=None, ankle_filepath=None, ecg_filepath=None,
-                 epoch_len=15, remove_epoch_baseline=False, rest_hr_window=60,
+                 epoch_len=15, remove_epoch_baseline=False,
+                 rest_hr_window=60, n_epochs_rest_hr=10,
                  filter_ecg=False, plot_data=False,
                  from_processed=True, load_raw_ecg=False, output_dir=None,
                  write_results=False, treadmill_processed=False, treadmill_log_file=None,
@@ -43,14 +45,13 @@ class Subject:
         self.load_wrist = load_wrist
         self.load_ankle = load_ankle
         self.load_ecg = load_ecg
-        self.wrist_filepath, self.ankle_filepath, self.ecg_filepath = self.get_raw_filenames()
-        print(self.wrist_filepath)
-        print(self.ankle_filepath)
-        print(self.ecg_filepath)
 
-        # self.wrist_filepath = wrist_filepath
-        # self.ankle_filepath = ankle_filepath
-        # self.ecg_filepath = ecg_filepath
+        self.demographics_file = demographics_file
+        self.demographics = ImportDemographics.import_demographics(demographics_file=self.demographics_file,
+                                                                   subjectID=self.subjectID)
+
+        self.wrist_filepath, self.ankle_filepath, self.ecg_filepath = self.get_raw_filenames()
+
         self.filter_ecg = filter_ecg
         self.plot_data = plot_data
 
@@ -67,6 +68,7 @@ class Subject:
         self.epoch_len = epoch_len
         self.remove_epoch_baseline = remove_epoch_baseline
         self.rest_hr_window = rest_hr_window
+        self.n_epochs_rest_hr = n_epochs_rest_hr
 
         self.from_processed = from_processed
         self.load_raw_ecg = load_raw_ecg
@@ -77,11 +79,7 @@ class Subject:
         self.treadmill_processed = treadmill_processed
 
         self.treadmill_log_file = treadmill_log_file
-        self.demographics_file = demographics_file
         self.sleeplog_folder = sleeplog_folder
-
-        self.demographics = ImportDemographics.import_demographics(demographics_file=self.demographics_file,
-                                                                   subjectID=self.subjectID)
 
         if not self.from_processed:
             self.start_offset_dict = DeviceSync.crop_start(subject_object=self)
@@ -97,7 +95,7 @@ class Subject:
                                output_dir=self.output_dir, write_results=self.write_results, epoch_len=self.epoch_len,
                                start_offset=self.start_offset_dict["ECG"], end_offset=self.end_offset_dict["ECG"],
                                age=self.demographics["Age"],
-                               rest_hr_window=self.rest_hr_window)
+                               rest_hr_window=self.rest_hr_window, n_epochs_rest=self.n_epochs_rest_hr)
 
         # Objects from Accelerometer script
         if self.wrist_filepath is not None:
@@ -123,12 +121,27 @@ class Subject:
         self.sleep = SleepLog.SleepLog(subject_object=self,
                                        sleeplog_file=self.sleeplog_folder)
 
-        # Creates subsets of data where only epochs where all data was valid are included
+        # Adds data to self.ecg since it relies on self.sleep to be complete
+        if self.load_ecg:
+            print()
+            print("========================================= MORE ECG DATA "
+                  "=============================================")
+
+            self.ecg.rolling_avg_hr, self.ecg.rest_hr, self.ecg.awake_hr \
+                = self.ecg.find_resting_hr(window_size=self.ecg.rest_hr_window, n_windows=self.ecg.n_epochs_rest,
+                                           sleep_status=self.sleep.sleep_status)
+
+            self.ecg.perc_hrr = self.ecg.calculate_percent_hrr()
+            self.ecg.epoch_intensity, self.ecg.intensity_totals = self.ecg.calculate_intensity()
+
+        # Processing that is only run if more than one device is loaded
         if self.load_wrist + self.load_ecg + self.load_ankle > 1:
+
+            # Creates subsets of data where only epochs where all data was valid are included
             self.valid = FindValidEpochs.ValidData(subject_object=self)
 
-        # Runs statistical analysis
-        self.stats = ModelStats.Stats(subject_object=self)
+            # Runs statistical analysis
+            self.stats = ModelStats.Stats(subject_object=self)
 
         processing_end = datetime.now()
 
@@ -143,20 +156,31 @@ class Subject:
 
     def get_raw_filenames(self):
 
-        file_list = [i for i in os.listdir(self.raw_edf_folder) if ".EDF" in i and str(self.subjectID) in i]
+        subject_file_list = [i for i in os.listdir(self.raw_edf_folder) if ".EDF" in i and str(self.subjectID) in i]
+        dom_hand = self.demographics["Hand"][0]
 
         wrist_filename = None
         ankle_filename = None
         ecg_filename = None
 
         if self.load_wrist:
-            wrist_filename = [self.raw_edf_folder + i for i in file_list if "Wrist" in i][0]
+            wrist_filenames = [self.raw_edf_folder + i for i in subject_file_list if "Wrist" in i]
+
+            if len(wrist_filenames) == 2:
+                wrist_filename = [i for i in wrist_filenames if dom_hand + "Wrist" not in i][0]
+            if len(wrist_filenames) == 1:
+                wrist_filename = wrist_filenames[0]
 
         if self.load_ankle:
-            ankle_filename = [self.raw_edf_folder + i for i in file_list if "Ankle" in i][0]
+            ankle_filenames = [self.raw_edf_folder + i for i in subject_file_list if "Ankle" in i]
+
+            if len(ankle_filenames) == 2:
+                ankle_filename = [i for i in ankle_filenames if dom_hand + "Ankle" not in i][0]
+            if len(ankle_filenames) == 1:
+                ankle_filename = ankle_filenames[0]
 
         if self.load_ecg:
-            ecg_filename = [self.raw_edf_folder + i for i in file_list if "BF" in i][0]
+            ecg_filename = [self.raw_edf_folder + i for i in subject_file_list if "BF" in i][0]
 
         return wrist_filename, ankle_filename, ecg_filename
 
@@ -198,11 +222,8 @@ class Subject:
             ax3.plot(self.ecg.epoch_timestamps[0:len(self.ecg.rolling_avg_hr)],
                      self.ecg.rolling_avg_hr[0:len(self.ecg.epoch_timestamps)], color='black',
                      label="Rolling Average ({} sec)".format(self.rest_hr_window))
-
-            ax3.axvline(x=self.ecg.epoch_timestamps[np.argwhere(np.asarray(self.ecg.rolling_avg_hr)
-                                                                == self.ecg.rest_hr)[0][0]],
-                        color='#289CE1', linestyle='dashed',
-                        label="Rest HR ({} bpm)".format(round(self.ecg.rest_hr, 1)))
+            ax3.axhline(y=self.ecg.rest_hr,
+                        linestyle='dashed', color='green', label="Resting HR ({} bpm)".format(self.ecg.rest_hr))
 
             ax3.legend(loc='upper left')
             ax3.set_ylabel("HR (bpm)")
@@ -267,7 +288,7 @@ class Subject:
         print("Sedentary: wrist = {} minutes, ankle = {} minutes, "
               "HR = {} minutes, HR-Acc = {} minutes.".format(sedentary_minutes[0], sedentary_minutes[1],
                                                              sedentary_minutes[2], sedentary_minutes[3]))
-        print("Light:             wrist = {} minutes, ankle = {} minutes, "
+        print("Light:     wrist = {} minutes, ankle = {} minutes, "
               "HR = {} minutes, HR-Acc = {} minutes.".format(light_minutes[0], light_minutes[1],
                                                              light_minutes[2], light_minutes[3]))
         print("Moderate: wrist = {} minutes, ankle = {} minutes, "
@@ -279,26 +300,24 @@ class Subject:
 
 
 x = Subject(raw_edf_folder="/Users/kyleweber/Desktop/Data/OND07/EDF/",
-            subjectID=3036,
-            load_ecg=False, load_ankle=True, load_wrist=False,
-
+            subjectID=3037,
+            load_ecg=True, load_ankle=True, load_wrist=True,
             treadmill_processed=True,
-            treadmill_log_file="/Users/kyleweber/Desktop/Data/OND07/Treadmill_Log.csv",
 
-            remove_epoch_baseline=True,
-
-            rest_hr_window=60,
+            rest_hr_window=30,
+            n_epochs_rest_hr=30,
             load_raw_ecg=False,
+            filter_ecg=True,
 
             epoch_len=15,
+            from_processed=True,
+
+            treadmill_log_file="/Users/kyleweber/Desktop/Data/OND07/Treadmill_Log.csv",
             demographics_file="/Users/kyleweber/Desktop/Data/OND07/Participant Information/Demographics_Data.csv",
             sleeplog_folder="/Users/kyleweber/Desktop/Data/OND07/Sleep Logs/",
-
             output_dir="/Users/kyleweber/Desktop/Data/OND07/Processed Data/",
-            from_processed=False,
 
             write_results=False,
             plot_data=False)
 
 # More dict writers for results
-# Set threshold based on walking bout duration
