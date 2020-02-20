@@ -1,7 +1,8 @@
 from scipy.signal import butter, lfilter
+import numpy as np
 
 
-def filter_signal(data, type, low_f, high_f, sample_f, filter_order):
+def filter_signal(data, type, low_f=None, high_f=None, sample_f=None, filter_order=2):
     """Function that creates bandpass filter to ECG data.
 
     Required arguments:
