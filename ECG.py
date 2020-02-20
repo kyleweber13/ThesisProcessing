@@ -21,7 +21,8 @@ from matplotlib.ticker import PercentFormatter
 class ECG:
 
     def __init__(self, filepath=None, output_dir=None, age=None, start_offset=0, end_offset=0,
-                 rest_hr_window=60, epoch_len=15,
+                 rest_hr_window=60, n_epochs_rest=10,
+                 epoch_len=15,
                  filter=False, low_f=1, high_f=30, f_type="bandpass",
                  load_raw=False, from_processed=True, write_results=True):
 
@@ -34,6 +35,7 @@ class ECG:
         self.age = age
         self.epoch_len = epoch_len
         self.rest_hr_window = rest_hr_window
+        self.n_epochs_rest = n_epochs_rest
         self.start_offset = start_offset
         self.end_offset = end_offset
 
@@ -71,15 +73,17 @@ class ECG:
         # List of epoched heart rates but any invalid epoch is marked as None instead of 0 (as is self.epoch_hr)
         self.valid_hr = [self.epoch_hr[i] if self.epoch_validity[i] == 0 else None for i in range(len(self.epoch_hr))]
 
-        # Calcultes resting HR
-        self.rolling_avg_hr, self.rest_hr = self.find_resting_hr(window_size=self.rest_hr_window)
-
-        # Relative HR
-        self.perc_hrr = self.calculate_percent_hrr()
-
         self.quality_report = self.generate_quality_report()
 
-        self.epoch_intensity, self.intensity_totals = self.calculate_intensity()
+        self.rolling_avg_hr = None
+        self.rest_hr = None
+        self.perc_hrr = None
+        self.epoch_intensity = None
+        self.epoch_intensity_totals = None
+
+        # self.rolling_avg_hr, self.rest_hr = self.find_resting_hr(window_size=self.rest_hr_window)
+        # self.perc_hrr = self.calculate_percent_hrr()
+        # self.epoch_intensity, self.intensity_totals = self.calculate_intensity()
 
         if self.write_results:
             self.write_output()
@@ -187,56 +191,51 @@ class ECG:
 
         return epoch_timestamps_formatted, epoch_validity, epoch_hr
 
-    def find_resting_hr(self, window_size=60, show_plot=False):
+    def find_resting_hr(self, window_size=60, n_windows=10, sleep_status=None):
         """Function that calculates a rolling average HR over specified time interval and locate its minimum.
 
         :argument
         -window_size: size of window over which rolling average is calculated, seconds
-        -show_plot: whether data is plotted
+        -n_windows: number of epochs over which resting HR is averaged (lowest n_windows number of epochs)
+        -sleep_status: data from class Sleep that corresponds to asleep/awake epochs
         """
 
         # Sets integer for window length based on window_size and epoch_len
         window_len = int(window_size / self.epoch_len)
 
-        # Calculates rolling average over window_len number of epochs
         rolling_avg = [statistics.mean(self.epoch_hr[i:i + window_len]) if 0 not in self.epoch_hr[i:i + window_len]
                        else None for i in range(len(self.epoch_hr))]
 
-        # Finds lowest HR
-        resting_hr = min([i for i in rolling_avg if i is not None])
+        # Calculates resting HR during waking hours if sleep_log available --------------------------------------------
+        if sleep_status is not None:
 
-        print("Minimum HR in {}-second window = {} bpm.".format(window_size, round(resting_hr, 1)))
+            awake_hr = [rolling_avg[i] for i in range(0, min(len(sleep_status), len(rolling_avg)))
+                        if sleep_status[i] == 0 and rolling_avg[i] is not None]
 
-        # Finds index where lowest HR occurred
-        min_index = np.argwhere(np.asarray(rolling_avg) == resting_hr)[0][0]
-        mean_hr = round(statistics.mean([i for i in self.valid_hr if i is not None]), 1)
-        sd_hr = round(statistics.stdev([i for i in self.valid_hr if i is not None]), 1)
+            sorted_hr = sorted(awake_hr)
 
-        # Plots epoch-by-epoch and rolling average HRs with resting HR location marked
-        if show_plot:
+            resting_hr = round(sum(sorted_hr[:n_windows]) / n_windows, 1)
 
-            plt.title("Resting Heart Rate")
+            print()
+            print("Resting HR (average of {} lowest {}-second periods while awake) is {} bpm.".format(n_windows,
+                                                                                                      window_size,
+                                                                                                      resting_hr))
 
-            plt.plot(self.epoch_timestamps, self.valid_hr, color='black',
-                     label="Epoch-by-Epoch ({}-sec)".format(self.epoch_len))
+        # Calculates resting HR during all hours if sleep_log not available -------------------------------------------
+        if sleep_status is None:
+            awake_hr = None
 
-            plt.plot(self.epoch_timestamps[0:len(rolling_avg)], rolling_avg, color='red',
-                     label="Rolling average ({}-sec)".format(window_size))
+            sorted_hr = sorted(rolling_avg)
 
-            plt.ylim(40, 200)
+            resting_hr = round(sum(sorted_hr[:n_windows]) / n_windows, 1)
 
-            plt.axvline(x=self.epoch_timestamps[min_index], color='green', linestyle='dashed',
-                        label="Rest HR ({} bpm)".format(round(resting_hr, 1)))
+            print()
+            print("No sleep data found so resting HR cannot be calculated. "
+                  "But you probably knew that since you likely got an error...")
+            print("If you did want an estimate of resting HR including sleep, 'resting heart rate' (average of {} "
+                  "lowest {}-second periods) is {} bpm.".format(n_windows, window_size, resting_hr))
 
-            plt.fill_between(x=self.epoch_timestamps, y1=(mean_hr - 1.96 * sd_hr), y2=(mean_hr + 1.96 * sd_hr),
-                             color="grey", alpha=0.35,
-                             label='95% Conf. Int. ({}-{} bpm)'.format(round(mean_hr-1.96*sd_hr, 1),
-                                                                       round(mean_hr+1.96*sd_hr, 1)))
-
-            plt.ylabel("HR (bpm)")
-            plt.legend(loc='upper left')
-
-        return rolling_avg, resting_hr
+        return rolling_avg, resting_hr, awake_hr
 
     def calculate_percent_hrr(self):
         """Calculates HR as percent of heart rate reserve using resting heart rate and predicted HR max using the
