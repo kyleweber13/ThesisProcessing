@@ -1,11 +1,12 @@
 from matplotlib import pyplot as plt
 import matplotlib.dates as mdates
 import numpy as np
+import csv
 
 
 class ValidData:
 
-    def __init__(self, subject_object=None, plot=False):
+    def __init__(self, subject_object=None, plot=False, write_results=True):
         """Generates a class instance that creates and stores data where all devices/models generated valid data.
            Removes periods of invalid ECG data, sleep, and non-wear (NOT CURRENTLY IMPLEMENTED)"""
 
@@ -14,6 +15,7 @@ class ValidData:
 
         self.subject_object = subject_object
         self.plot = plot
+        self.write_results = write_results
 
         # Data sets ---------------------------------------------------------------------------------------------------
         self.data_len = 1
@@ -35,6 +37,12 @@ class ValidData:
         self.hr = None
         self.hr_acc = None
 
+        # Dictionaries for activity totals using valid data
+        self.ankle_totals = None
+        self.wrist_totals = None
+        self.hr_totals = None
+        self.hracc_totals = None
+
         self.percent_valid = None
 
         # =============================================== RUNS METHODS ================================================
@@ -51,7 +59,12 @@ class ValidData:
         if self.sleep_validity is not None:
             self.remove_invalid_sleep()
 
+        self.recalculate_activity_totals()
+
         self.generate_validity_report()
+
+        if self.write_results:
+            self.write_activity_totals()
 
         if self.plot:
             self.plot_validity_data()
@@ -59,15 +72,28 @@ class ValidData:
     def organize_data(self):
 
         # Uses timestamps from an available device (should all be equivalent)
+        data_len = []
         try:
-            self.data_len = len(self.subject_object.ankle.epoch.svm)
+            data_len.append(len(self.subject_object.ankle.epoch.svm))
+        except AttributeError:
+            data_len.append(None)
+        try:
+            data_len.append(len(self.subject_object.wrist.epoch.svm))
+        except AttributeError:
+            data_len.append(None)
+        try:
+            data_len.append(len(self.subject_object.ecg.epoch_timestamps))
+        except AttributeError:
+            data_len.append(None)
+
+        self.data_len = min([i for i in data_len if i is not None])
+
+        try:
             self.epoch_timestamps = self.subject_object.ankle.epoch.timestamps
         except AttributeError:
             try:
-                self.data_len = len(self.subject_object.wrist.epoch.svm)
                 self.epoch_timestamps = self.subject_object.wrist.epoch.timestamps
             except AttributeError:
-                self.data_len = len(self.subject_object.ecg.epoch_timestamps)
                 self.epoch_timestamps = self.subject_object.ecg.epoch_timestamps
 
         # Ankle intensity data
@@ -142,6 +168,7 @@ class ValidData:
         if self.hr_intensity is not None and self.hr is None:
             self.hr = [self.hr_intensity[i] if self.sleep_validity[i] == 0 else None for i in range(self.data_len)]
 
+        print(len(self.hr), len(self.sleep_validity), self.data_len)
         if self.hr_intensity is not None and self.hr is not None:
             self.hr = [self.hr[i] if self.sleep_validity[i] == 0 else None for i in range(self.data_len)]
 
@@ -217,3 +244,94 @@ class ValidData:
         plt.xticks(rotation=45, fontsize=6)
 
         plt.show()
+
+    def recalculate_activity_totals(self):
+
+        # ANKLE -------------------------------------------------------------------------------------------------------
+        if self.ankle is not None:
+
+            epoch_to_minutes = 60 / self.subject_object.ankle.epoch_len
+
+            n_valid_epochs = len(self.ankle) - self.ankle.count(None)
+
+            self.ankle_totals = {"Model": "Ankle",
+                                 "Sedentary": self.ankle.count(0) / epoch_to_minutes,
+                                 "Sedentary%": round(self.ankle.count(0) / n_valid_epochs, 3),
+                                 "Light": (self.ankle.count(1)) / epoch_to_minutes,
+                                 "Light%": round(self.ankle.count(1) / n_valid_epochs, 3),
+                                 "Moderate": self.ankle.count(2) / epoch_to_minutes,
+                                 "Moderate%": round(self.ankle.count(2) / n_valid_epochs, 3),
+                                 "Vigorous": self.ankle.count(3) / epoch_to_minutes,
+                                 "Vigorous%": round(self.ankle.count(3) / n_valid_epochs, 3)}
+
+        # WRIST -------------------------------------------------------------------------------------------------------
+        if self.wrist is not None:
+
+            epoch_to_minutes = 60 / self.subject_object.wrist.epoch_len
+
+            n_valid_epochs = len(self.wrist) - self.wrist.count(None)
+
+            self.wrist_totals = {"Model": "Wrist",
+                                 "Sedentary": self.wrist.count(0) / epoch_to_minutes,
+                                 "Sedentary%": round(self.wrist.count(0) / n_valid_epochs, 3),
+                                 "Light": (self.wrist.count(1)) / epoch_to_minutes,
+                                 "Light%": round(self.wrist.count(1) / n_valid_epochs, 3),
+                                 "Moderate": self.wrist.count(2) / epoch_to_minutes,
+                                 "Moderate%": round(self.wrist.count(2) / n_valid_epochs, 3),
+                                 "Vigorous": self.wrist.count(3) / epoch_to_minutes,
+                                 "Vigorous%": round(self.wrist.count(3) / n_valid_epochs, 3)}
+
+        # HEART RATE --------------------------------------------------------------------------------------------------
+        if self.hr is not None:
+
+            epoch_to_minutes = 60 / self.subject_object.ecg.epoch_len
+
+            n_valid_epochs = len(self.hr) - self.hr.count(None)
+
+            self.hr_totals = {"Model": "HR",
+                              "Sedentary": self.hr.count(0) / epoch_to_minutes,
+                              "Sedentary%": round(self.hr.count(0) / n_valid_epochs, 3),
+                              "Light": (self.hr.count(1)) / epoch_to_minutes,
+                              "Light%": round(self.hr.count(1) / n_valid_epochs, 3),
+                              "Moderate": self.hr.count(2) / epoch_to_minutes,
+                              "Moderate%": round(self.hr.count(2) / n_valid_epochs, 3),
+                              "Vigorous": self.hr.count(3) / epoch_to_minutes,
+                              "Vigorous%": round(self.hr.count(3) / n_valid_epochs, 3)}
+
+        # HR-ACC ------------------------------------------------------------------------------------------------------
+        if self.hr_acc is not None:
+
+            epoch_to_minutes = 60 / self.subject_object.hracc.epoch_len
+
+            n_valid_epochs = len(self.hr_acc) - self.hr_acc.count(None)
+
+            self.hracc_totals = {"Model": "HR-Acc",
+                                 "Sedentary": self.hr_acc.count(0) / epoch_to_minutes,
+                                 "Sedentary%": round(self.hr_acc.count(0) / n_valid_epochs, 3),
+                                 "Light": (self.hr_acc.count(1)) / epoch_to_minutes,
+                                 "Light%": round(self.hr_acc.count(1) / n_valid_epochs, 3),
+                                 "Moderate": self.hr_acc.count(2) / epoch_to_minutes,
+                                 "Moderate%": round(self.hr_acc.count(2) / n_valid_epochs, 3),
+                                 "Vigorous": self.hr_acc.count(3) / epoch_to_minutes,
+                                 "Vigorous%": round(self.hr_acc.count(3) / n_valid_epochs, 3)}
+
+    def write_activity_totals(self):
+
+        with open("{}Model Output/OND07_WTL_{}_01_Valid_Activity_Totals.csv".format(self.subject_object.output_dir,
+                                                                                    self.subject_object.subjectID),
+                  'w', newline='') as outfile:
+
+            fieldnames = ['Model', 'Sedentary', 'Sedentary%', 'Light', 'Light%',
+                          'Moderate', 'Moderate%', 'Vigorous', 'Vigorous%']
+            writer = csv.DictWriter(outfile, fieldnames=fieldnames)
+
+            writer.writeheader()
+            writer.writerow(self.ankle_totals)
+            writer.writerow(self.wrist_totals)
+            writer.writerow(self.hr_totals)
+            # writer.writerow(self.hracc_totals)
+
+            print()
+            print("Saved activity profiles from valid data to file "
+                  "{}Model Output/OND07_WTL_{}_01_Valid_Activity_Totals.csv".format(self.subject_object.output_dir,
+                                                                                    self.subject_object.subjectID))
