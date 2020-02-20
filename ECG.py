@@ -20,11 +20,38 @@ from matplotlib.ticker import PercentFormatter
 
 class ECG:
 
-    def __init__(self, filepath=None, output_dir=None, age=None, start_offset=0, end_offset=0,
+    def __init__(self, filepath=None, output_dir=None, age=0, start_offset=0, end_offset=0,
                  rest_hr_window=60, n_epochs_rest=10,
                  epoch_len=15,
                  filter=False, low_f=1, high_f=30, f_type="bandpass",
                  load_raw=False, from_processed=True, write_results=True):
+        """Class that contains raw and processed ECG data.
+
+        :argument
+        DATA IMPORT
+        -filepath: full pathway to EDF file
+        -load_raw: boolean of whether to load raw ECG data. Can be used in addition to from_processed = True
+        -from_processed: boolean of whether to read in already processed data
+                         (epoch timestamps, epoch HR, quality control check)
+        -output_dir: where files are written to OR where processed data files are read in from
+        -start_offset, end_offset: indexes used to crop data to match other devices
+
+        DATA EPOCHING
+        -rest_hr_window: number of seconds over which HR is averaged when calculating resting HR
+            -Creates a rolling average of HR over this many seconds (rounded to match epoch length)
+        -n_epochs_rest: number of epochs used in the resting HR calculation
+                        (averages HR over the n_epochs_rest lower HRs)
+        -epoch_len: time period over which data is processed, seconds
+
+        FILTERING
+        -filter: whether or not to filter the data
+        -low_f, high_1: cut-off frequencies for the filter. Set to None if irrelevant. In Hz.
+        -f_type: type of filter; "lowpass", "highpass", "bandpass"
+
+        OTHER
+        -write_results: boolean of whether to write output file
+        -age: participant age in years. Needed for HRmax calculation.
+        """
 
         print()
         print("============================================= ECG DATA ==============================================")
@@ -89,6 +116,11 @@ class ECG:
             self.write_output()
 
     def check_quality(self):
+        """Performs quality check using Orphanidou et al. (2015) algorithm that has been tweaked to factor in voltage
+           range as well.
+
+           This function runs a loop that creates object from the class CheckQuality for each epoch in the raw data.
+        """
 
         print("\n" + "Running quality check with Orphanidou et al. (2015) algorithm...")
 
@@ -159,7 +191,7 @@ class ECG:
         return quality_report
 
     def load_processed(self):
-        """Method to load previously-processed epoched HR and validity data.
+        """Method to load previously-processed epoched timestamp, HR and validity data.
 
         :returns
         -epoch_timestamps: timestamp for start of each epoch
@@ -192,7 +224,7 @@ class ECG:
         return epoch_timestamps_formatted, epoch_validity, epoch_hr
 
     def find_resting_hr(self, window_size=60, n_windows=10, sleep_status=None):
-        """Function that calculates a rolling average HR over specified time interval and locate its minimum.
+        """Function that calculates resting HR based on inputs.
 
         :argument
         -window_size: size of window over which rolling average is calculated, seconds
@@ -239,16 +271,28 @@ class ECG:
 
     def calculate_percent_hrr(self):
         """Calculates HR as percent of heart rate reserve using resting heart rate and predicted HR max using the
-        equation from Tanaka et al. (2001)."""
+           equation from Tanaka et al. (2001).
+           Removes negative %HRR values which are possible due to how resting HR is defined.
+        """
 
         hr_max = 208 - 0.7 * self.age
 
         perc_hrr = [100 * (hr - self.rest_hr) / (hr_max - self.rest_hr) if hr
                     is not None else None for hr in self.valid_hr]
 
-        # A single epoch's HR can be below resting HR based on its definition
-        # Changes any negative values to 0
-        # perc_hrr = [i if i >= 0 or i is None else 0 for i in perc_hrr if i is not None]
+        # A single epoch's HR can be below resting HR based on how it's defined
+        # Changes any negative values to 0, maintains Nones and positive values
+        # Can't figure out how to do this as a list comprehension - don't judge
+        perc_hrr_final = []
+
+        for i in perc_hrr:
+            if i is not None:
+                if i >= 0:
+                    perc_hrr_final.append(i)
+                if i < 0:
+                    perc_hrr_final.append(0)
+            if i is None:
+                perc_hrr_final.append(None)
 
         return perc_hrr
 
@@ -261,7 +305,7 @@ class ECG:
         -intensity_minutes: total minutes spent at each intensity, dictionary
         """
 
-        # Calculates epoch-by-epoch intensity
+        # INTENSITIY DEFINITIONS
         # Sedentary = %HRR < 30, light = 30 < %HRR <= 40, moderate = 40 < %HRR <= 60, vigorous = %HRR >= 60
 
         intensity = []
@@ -309,9 +353,10 @@ class ECG:
         return intensity, intensity_totals
 
     def plot_histogram(self):
-        """Generates a histogram of heart rates over the course of the collection with a bin width of 5 bpm."""
+        """Generates a histogram of heart rates over the course of the collection with a bin width of 5 bpm.
+           Marks calculated average and resting HR."""
 
-        # Only valid HRs
+        # Data subset: only valid HRs
         valid_heartrates = [i for i in self.valid_hr if i is not None]
         avg_hr = sum(valid_heartrates) / len(valid_heartrates)
 
@@ -371,7 +416,6 @@ class CheckQuality:
         -epoch_len: window length in seconds over which algorithm is run; 15 seconds by default
         """
 
-        # __init__ parameters
         self.epoch_len = epoch_len
         self.fs = ecg_object.sample_rate
         self.start_index = start_index
