@@ -9,12 +9,12 @@ import Filtering
 
 class GENEActiv:
 
-    def __init__(self, filepath, from_processed, start_offset=0, end_offset=0):
+    def __init__(self, filepath, load_raw, start_offset=0, end_offset=0):
 
         self.filepath = filepath
         self.start_offset = start_offset
         self.end_offset = end_offset
-        self.from_processed = from_processed
+        self.load_raw = load_raw
 
         # Accelerometer data
         self.x = None
@@ -29,7 +29,7 @@ class GENEActiv:
         self.file_dur = None
 
         # IMPORTS GENEActiv FILE
-        if not self.from_processed:
+        if self.load_raw:
             self.import_file()
 
     def import_file(self):
@@ -172,7 +172,10 @@ class Bittium:
         file = pyedflib.EdfReader(self.filepath)
 
         # READS IN ECG DATA ===========================================================================================
-        self.raw = file.readSignal(chn=0, start=self.start_offset, n=self.end_offset)
+        if self.end_offset == 0:
+            self.raw = file.readSignal(chn=0, start=self.start_offset)
+        if self.end_offset != 0:
+            self.raw = file.readSignal(chn=0, start=self.start_offset, n=self.end_offset)
 
         print("ECG data import complete.")
 
@@ -182,7 +185,7 @@ class Bittium:
 
         # Data filtering
         self.filtered = Filtering.filter_signal(data=self.raw, low_f=self.low_f, high_f=self.high_f,
-                                                type=self.f_type, sample_f=self.sample_rate, filter_order=2)
+                                                type=self.f_type, sample_f=self.sample_rate, filter_order=3)
 
         # TIMESTAMP GENERATION ========================================================================================
         t0_stamp = datetime.now()
