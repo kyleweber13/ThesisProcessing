@@ -26,10 +26,11 @@ class Subject:
 
     def __init__(self, raw_edf_folder=None, subjectID=None,
                  load_wrist=False, load_ankle=False, load_ecg=False,
+                 load_raw_ecg=False, load_raw_ankle=False, load_raw_wrist=False,
                  epoch_len=15, remove_epoch_baseline=False,
                  rest_hr_window=60, n_epochs_rest_hr=10,
                  filter_ecg=False, plot_data=False,
-                 from_processed=True, load_raw_ecg=False, output_dir=None,
+                 from_processed=True, output_dir=None,
                  write_results=False, treadmill_processed=False, treadmill_log_file=None,
                  demographics_file=None, sleeplog_folder=None):
 
@@ -45,6 +46,9 @@ class Subject:
         self.load_wrist = load_wrist
         self.load_ankle = load_ankle
         self.load_ecg = load_ecg
+        self.load_raw_ecg = load_raw_ecg
+        self.load_raw_ankle = load_raw_ankle
+        self.load_raw_wrist = load_raw_wrist
 
         self.demographics_file = demographics_file
         self.demographics = ImportDemographics.import_demographics(demographics_file=self.demographics_file,
@@ -71,7 +75,6 @@ class Subject:
         self.n_epochs_rest_hr = n_epochs_rest_hr
 
         self.from_processed = from_processed
-        self.load_raw_ecg = load_raw_ecg
         self.output_dir = output_dir
         self.processed_folder = self.output_dir + "Model Output/"
 
@@ -99,7 +102,8 @@ class Subject:
 
         # Objects from Accelerometer script
         if self.wrist_filepath is not None:
-            self.wrist = Accelerometer.Wrist(filepath=self.wrist_filepath,output_dir=self.output_dir,
+            self.wrist = Accelerometer.Wrist(filepath=self.wrist_filepath, load_raw=self.load_raw_wrist,
+                                             output_dir=self.output_dir,
                                              processed_folder=self.processed_folder, from_processed=self.from_processed,
                                              write_results=self.write_results,
                                              start_offset=self.start_offset_dict["Wrist"],
@@ -107,7 +111,8 @@ class Subject:
                                              ecg_object=self.ecg)
 
         if self.ankle_filepath is not None:
-            self.ankle = Accelerometer.Ankle(filepath=self.ankle_filepath, output_dir=self.output_dir,
+            self.ankle = Accelerometer.Ankle(filepath=self.ankle_filepath, load_raw=self.load_raw_ankle,
+                                             output_dir=self.output_dir,
                                              remove_baseline=self.remove_epoch_baseline,
                                              processed_folder=self.processed_folder, from_processed=self.from_processed,
                                              treadmill_processed=True, treadmill_log_file=self.treadmill_log_file,
@@ -291,10 +296,10 @@ class Subject:
         print("Light:     wrist = {} minutes, ankle = {} minutes, "
               "HR = {} minutes, HR-Acc = {} minutes.".format(light_minutes[0], light_minutes[1],
                                                              light_minutes[2], light_minutes[3]))
-        print("Moderate: wrist = {} minutes, ankle = {} minutes, "
+        print("Moderate:  wrist = {} minutes, ankle = {} minutes, "
               "HR = {} minutes, HR-Acc = {} minutes.".format(moderate_minutes[0], moderate_minutes[1],
                                                              moderate_minutes[2], moderate_minutes[3]))
-        print("Vigorous: wrist = {} minutes, ankle = {} minutes, "
+        print("Vigorous:  wrist = {} minutes, ankle = {} minutes, "
               "HR = {} minutes, HR-Acc = {} minutes.".format(vigorous_minutes[0], vigorous_minutes[1],
                                                              vigorous_minutes[2], vigorous_minutes[3]))
 
@@ -302,11 +307,12 @@ class Subject:
 x = Subject(raw_edf_folder="/Users/kyleweber/Desktop/Data/OND07/EDF/",
             subjectID=3037,
             load_ecg=True, load_ankle=True, load_wrist=True,
+            load_raw_ecg=False, load_raw_ankle=True, load_raw_wrist=False,
+
             treadmill_processed=True,
 
             rest_hr_window=30,
             n_epochs_rest_hr=30,
-            load_raw_ecg=False,
             filter_ecg=True,
 
             epoch_len=15,
@@ -320,4 +326,5 @@ x = Subject(raw_edf_folder="/Users/kyleweber/Desktop/Data/OND07/EDF/",
             write_results=False,
             plot_data=False)
 
+# TODO
 # More dict writers for results
