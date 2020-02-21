@@ -20,7 +20,8 @@ import math
 
 class Wrist:
 
-    def __init__(self, filepath, output_dir, epoch_len=15, start_offset=0, end_offset=0, ecg_object=None,
+    def __init__(self, filepath, output_dir, load_raw=False,
+                 epoch_len=15, start_offset=0, end_offset=0, ecg_object=None,
                  from_processed=True, processed_folder=None, write_results=False):
 
         print()
@@ -29,6 +30,8 @@ class Wrist:
         self.filepath = filepath
         self.filename = self.filepath.split("/")[-1].split(".")[0]
         self.output_dir = output_dir
+
+        self.load_raw = load_raw
 
         self.epoch_len = epoch_len
         self.start_offset = start_offset
@@ -43,7 +46,7 @@ class Wrist:
         # Loads raw accelerometer data and generates timestamps
         self.raw = ImportEDF.GENEActiv(filepath=self.filepath,
                                        start_offset=self.start_offset, end_offset=self.end_offset,
-                                       from_processed=self.from_processed)
+                                       load_raw=self.load_raw)
 
         self.epoch = EpochData.EpochAccel(raw_data=self.raw,
                                           from_processed=self.from_processed, processed_folder=processed_folder)
@@ -173,7 +176,8 @@ class WristModel:
 
 class Ankle:
 
-    def __init__(self, filepath=None, output_dir=None, rvo2=None, age=None, epoch_len=15,
+    def __init__(self, filepath=None, load_raw=False,
+                 output_dir=None, rvo2=None, age=None, epoch_len=15,
                  start_offset=0, end_offset=0,
                  remove_baseline=False, ecg_object=None,
                  from_processed=True, treadmill_processed=False, treadmill_log_file=None,
@@ -184,6 +188,7 @@ class Ankle:
 
         self.filepath = filepath
         self.filename = self.filepath.split("/")[-1].split(".")[0]
+        self.load_raw = load_raw
         self.output_dir = output_dir
 
         self.subjectID = self.filename.split("_")[2]
@@ -206,7 +211,7 @@ class Ankle:
         # Loads raw accelerometer data and generates timestamps
         self.raw = ImportEDF.GENEActiv(filepath=self.filepath,
                                        start_offset=self.start_offset, end_offset=self.end_offset,
-                                       from_processed=self.from_processed)
+                                       load_raw=self.load_raw)
 
         self.epoch = EpochData.EpochAccel(raw_data=self.raw, epoch_len=self.epoch_len,
                                           remove_baseline=self.remove_baseline,
@@ -219,30 +224,50 @@ class Ankle:
         self.model = AnkleModel(ankle_object=self, treadmill_object=self.treadmill, write_results=self.write_results,
                                 ecg_object=self.ecg_object)
 
-    def plot_raw_over_epoch(self):
+    def plot_raw_over_epoch(self, day, downsample=3):
         """Creates a plot of two subplots with vector magnitude (raw) and epoched data."""
 
         fig, (ax1, ax2) = plt.subplots(2, sharex="col", figsize=(10, 7))
 
         try:
-            indexes = np.arange(0, len(self.raw.vm))
+            indexes = np.arange(self.raw.sample_rate * (day - 1) * 86400, self.raw.sample_rate * day * 86400)
 
-            ax1.plot(indexes / self.raw.sample_rate, self.raw.vm, color='black')
+            ax1.plot(indexes[::downsample] / self.raw.sample_rate,
+                     self.raw.x[self.raw.sample_rate * (day - 1) * 86400:
+                                self.raw.sample_rate * day * 86400:
+                                downsample],
+                     color='black', label="X-axis ({}Hz)".format(round(self.raw.sample_rate / downsample), 1))
+
+            ax1.legend(loc='upper left')
+
         except TypeError:
             pass
+
         ax1.set_ylabel("Vector Magnitude (G)")
 
         try:
-            indexes = np.arange(0, len(self.epoch.svm) * self.epoch_len * self.raw.sample_rate)
-            ax2.bar(indexes[::self.raw.sample_rate * self.epoch_len][0:len(self.epoch.svm)] / self.raw.sample_rate,
-                    self.epoch.svm,
+
+            epoch_start = int((day - 1) * 86400 / self.epoch_len)
+            epoch_end = epoch_start + int(86400 / self.epoch_len)
+
+            indexes = np.arange(epoch_start, epoch_end)
+            if indexes[-1] > len(self.epoch.svm):
+                indexes = np.arange(epoch_start, len(self.epoch.svm))
+
+            ax2.bar(indexes * self.epoch_len, self.epoch.svm[epoch_start:epoch_end],
                     width=15, edgecolor='black', color='grey', alpha=0.75, align="edge")
             ax2.set_ylabel("Counts per {}s".format(self.epoch_len))
+
+            ax2.axhline(y=self.model.linear_dict["Meaningful threshold"], label="33%Pref", linestyle='dashed',
+                        color='red')
+
+            ax2.legend(loc='upper left')
+
         except (TypeError, AttributeError):
             pass
 
         ax2.set_xlabel("Seconds")
-        plt.title("Vector Magnitude and Epoched Data")
+        plt.title("Vector Magnitude and Epoched Data - Day {}".format(day))
 
     def plot_epoch_hist(self, bin_size=25):
         """Plots histogram of epoched activity counts with adjustable bin size."""
@@ -601,7 +626,7 @@ class AnkleModel:
 
         # Creates a list of predicted speeds where any speed below the sedentary threshold is set to 0 m/s
         above_sed_thresh = []
-        meaningful_threshold = self.tm_object.avg_walk_counts[2]
+        meaningful_threshold = self.tm_object.avg_walk_counts[2] / 3
 
         for speed, counts in zip(linear_predicted_speed, self.epoch_data):
             if counts >= meaningful_threshold:
@@ -613,7 +638,7 @@ class AnkleModel:
                            "Light speed": light_speed, "Light counts": light_counts,
                            "Moderate speed": mod_speed, "Moderate counts": mod_counts,
                            "Vigorous speed": vig_speed, "Vigorous counts": vig_counts,
-                           "Meaningful Threshold": meaningful_threshold}
+                           "Meaningful threshold": meaningful_threshold}
 
         return linear_reg_dict, above_sed_thresh
 
@@ -685,7 +710,7 @@ class AnkleModel:
 
         return quad_reg_dict, quad_speed
 
-    def plot_regression(self, regression_type):
+    def plot_regression(self, regression_type="linear"):
         """Plots measured results and results predicted from regression."""
 
         # Non-specific variables
@@ -697,7 +722,7 @@ class AnkleModel:
             regression_type = "linear"
             dict = self.linear_dict
             curve_data = [round(i * self.linear_dict["a"] + self.linear_dict["b"], 3)
-                          for i in np.arange(min_value, max_value)]
+                          for i in np.arange(0, max_value)]
             predicted_max = max_value * self.linear_dict["a"] + self.linear_dict["b"]
 
         if regression_type == "quadratic" or regression_type == "q":
