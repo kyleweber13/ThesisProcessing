@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from datetime import datetime
 from datetime import timedelta
 import matplotlib.pyplot as plt
@@ -15,7 +16,7 @@ class SleepLog:
     -file_loc: folder that contains sleep logs
     """
 
-    def __init__(self, subject_object, sleeplog_file, plot=False):
+    def __init__(self, subject_object, sleeplog_file=None, plot=False):
 
         print()
         print("=========================================== SLEEP LOG DATA ===========================================")
@@ -53,29 +54,45 @@ class SleepLog:
         except AttributeError:
             self.hr = None
 
-        # Imports sleep log data
-        self.sleep_log = self.import_sleeplog()
-        self.sleep_data = self.format_sleeplog()
+        if self.file_loc is not None:
+            try:
+                # Imports sleep log data
+                self.sleep_log = self.import_sleeplog()
+                self.sleep_data = self.format_sleeplog()
 
-        # Determines which epochs were asleep
-        self.sleep_status = self.mark_sleep_epochs()
+                # Determines which epochs were asleep
+                self.sleep_status = self.mark_sleep_epochs()
 
-        # Sleep report
-        self.sleep_report = self.generate_sleep_report()
+                # Sleep report
+                # self.sleep_report = self.generate_sleep_report()
+
+            except OSError:
+                # Handles error if file not found
+                self.sleep_log = None
+                self.sleep_data = None
+                self.sleep_status = np.zeros(self.data_len)  # Pretends participant did not sleep
+                self.sleep_report = None
+
+        if self.file_loc is None:
+            self.sleep_log = None
+            self.sleep_data = None
+            self.sleep_status = np.zeros(self.data_len)  # Pretends participant did not sleep
+            self.sleep_report = None
 
         # Plots result
         if self.plot:
             self.plot_sleeplog()
 
     def import_sleeplog(self):
-        """Imports sleep log from .csv. Returns as ndarray.
-           Column names: Date, TIME_OUT_BED, NAP_START, NAP_END, TIME_IN_BED
+        """Imports sleep log from .csv. Only keeps values associated with Subject. Returns as ndarray.
+           Column names: SUBJECT, DATE, TIME_OUT_BED, NAP_START, NAP_END, TIME_IN_BED
         """
 
-        sleep_log = np.loadtxt(fname="{}{}_SleepLog.csv".format(self.file_loc, self.subjectID), delimiter=",",
-                               dtype="str", skiprows=1, usecols=(3, 5, 7, 8, 9))
+        sleep_log = np.loadtxt(fname="{}SleepLogs_All.csv".format(self.file_loc), delimiter=",",
+                               dtype="str", skiprows=1, usecols=(0, 3, 5, 7, 8, 9))
+        subj_sleep_log = [i for i in sleep_log if self.subjectID in i[0]]
 
-        return sleep_log
+        return subj_sleep_log
 
     def format_sleeplog(self):
         """Formats timestamps for sleep data. Returns a list of lists where each list is one day's worth of data.
@@ -88,7 +105,7 @@ class SleepLog:
             day_data = []
 
             # Formats date stamp
-            date = datetime.strptime(day[0], "%Y%b%d").date()
+            date = datetime.strptime(day[1], "%Y%b%d").date()
 
             # Loops through other values for each day
             for value in range(1, len(day)):
@@ -123,6 +140,11 @@ class SleepLog:
         epoch_list = np.zeros(self.data_len)
 
         for i, epoch_stamp in enumerate(self.epoch_timestamps):
+            try:
+                epoch_stamp = datetime.strptime(str(epoch_stamp)[:-3], "%Y-%m-%dT%H:%M:%S.%f")
+            except ValueError:
+                epoch_stamp = datetime.strptime(str(epoch_stamp).split(".")[0], "%Y-%m-%d %H:%M:%S")
+
             for asleep, awake in zip(self.sleep_data[:], self.sleep_data[1:]):
                 # Overnight sleep
                 if asleep[3] != "N/A" and awake[0] != "N/A":
@@ -192,7 +214,8 @@ class SleepLog:
 
         # WRIST ACCELEROMETER ----------------------------------------------------------------------------------------
         try:
-            ax1.plot(self.epoch_timestamps, self.wrist_svm, label="Wrist", color='black')
+            ax1.plot(self.epoch_timestamps[:len(self.wrist_svm)], self.wrist_svm[:len(self.epoch_timestamps)],
+                     label="Wrist", color='black')
             ax1.legend(loc='upper left')
 
             ax1.set_ylabel("Counts")
@@ -200,27 +223,27 @@ class SleepLog:
             for day in self.sleep_data:
                 for index, value in enumerate(day):
                     if value != "N/A":
-                        if index == 0:
+                        if index == 1:
                             ax1.axvline(x=value, color="green", label="Woke up")
 
-                        if index == 3:
+                        if index == 4:
                             ax1.axvline(x=value, color="green", label="To bed")
 
-                        if index == 1:
+                        if index == 2:
                             ax1.axvline(x=value, color="red", label="Nap")
 
-                        if index == 2:
+                        if index == 3:
                             ax1.axvline(x=value, color="red", label="Wake up from nap")
 
             # Fills in region where participant was asleep
             for day1, day2 in zip(self.sleep_data[:], self.sleep_data[1:]):
                 try:
                     # Overnight --> green
-                    ax1.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, max(self.wrist_svm)),
+                    ax1.fill_betweenx(x1=day1[4], x2=day2[1], y=np.arange(0, max(self.wrist_svm)),
                                       color='green', alpha=0.35)
 
                     # Naps --> red
-                    ax1.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, max(self.wrist_svm)),
+                    ax1.fill_betweenx(x1=day1[3], x2=day1[2], y=np.arange(0, max(self.wrist_svm)),
                                       color='red', alpha=0.35)
                 except AttributeError:
                     pass
@@ -230,34 +253,35 @@ class SleepLog:
 
         # ANKLE ACCELEROMETER ----------------------------------------------------------------------------------------
         try:
-            ax2.plot(self.epoch_timestamps, self.ankle_svm, label='Ankle', color='black')
+            ax2.plot(self.epoch_timestamps[:len(self.ankle_svm)], self.ankle_svm[:len(self.epoch_timestamps)],
+                     label='Ankle', color='black')
             ax2.legend(loc='upper left')
             ax2.set_ylabel("Counts")
 
             for day in self.sleep_data:
                 for index, value in enumerate(day):
                     if value != "N/A":
-                        if index == 0:
+                        if index == 1:
                             ax2.axvline(x=value, color="green", label="Woke up")
 
-                        if index == 3:
+                        if index == 4:
                             ax2.axvline(x=value, color="green", label="To bed")
 
-                        if index == 1:
+                        if index == 2:
                             ax2.axvline(x=value, color="red", label="Nap")
 
-                        if index == 2:
+                        if index == 3:
                             ax2.axvline(x=value, color="red", label="Wake up from nap")
 
             # Fills in region where participant was asleep
             for day1, day2 in zip(self.sleep_data[:], self.sleep_data[1:]):
                 try:
                     # Overnight --> green
-                    ax2.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, max(self.ankle_svm)),
+                    ax2.fill_betweenx(x1=day1[4], x2=day2[1], y=np.arange(0, max(self.ankle_svm)),
                                       color='green', alpha=0.35)
 
                     # Naps --> red
-                    ax2.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, max(self.ankle_svm)),
+                    ax2.fill_betweenx(x1=day1[3], x2=day1[2], y=np.arange(0, max(self.ankle_svm)),
                                       color='red', alpha=0.35)
 
                 except AttributeError:
@@ -277,28 +301,28 @@ class SleepLog:
             for day in self.sleep_data:
                 for index, value in enumerate(day):
                     if value != "N/A":
-                        if index == 0:
+                        if index == 1:
                             ax3.axvline(x=value, color="green", label="Woke up")
 
-                        if index == 3:
+                        if index == 4:
                             ax3.axvline(x=value, color="green", label="To bed")
 
-                        if index == 1:
+                        if index == 2:
                             ax3.axvline(x=value, color="red", label="Nap")
 
-                        if index == 2:
+                        if index == 3:
                             ax3.axvline(x=value, color="red", label="Wake up from nap")
 
             # Fills in region where participant was asleep
             for day1, day2 in zip(self.sleep_data[:], self.sleep_data[1:]):
                 try:
                     # Overnight --> green
-                    ax3.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(min([i for i in self.hr if i is not None]),
+                    ax3.fill_betweenx(x1=day1[4], x2=day2[1], y=np.arange(min([i for i in self.hr if i is not None]),
                                                                           max([i for i in self.hr if i is not None])),
                                       color='green', alpha=0.35)
 
                     # Naps --> red
-                    ax3.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(min([i for i in self.hr if i is not None]),
+                    ax3.fill_betweenx(x1=day1[3], x2=day1[2], y=np.arange(min([i for i in self.hr if i is not None]),
                                                                           max([i for i in self.hr if i is not None])),
                                       color='red', alpha=0.35)
                 except AttributeError:
