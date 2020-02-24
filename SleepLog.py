@@ -64,7 +64,7 @@ class SleepLog:
                 self.sleep_status = self.mark_sleep_epochs()
 
                 # Sleep report
-                # self.sleep_report = self.generate_sleep_report()
+                self.sleep_report = self.generate_sleep_report()
 
             except OSError:
                 # Handles error if file not found
@@ -128,7 +128,7 @@ class SleepLog:
 
                 day_data.append(datestamp)
 
-            all_data.append(day_data)
+            all_data.append(day_data[1:])
 
         return all_data
 
@@ -158,7 +158,9 @@ class SleepLog:
         return epoch_list
 
     def generate_sleep_report(self):
-        """Generates summary sleep measures in minutes."""
+        """Generates summary sleep measures in minutes.
+        Column names: SUBJECT, DATE, TIME_OUT_BED, NAP_START, NAP_END, TIME_IN_BED
+        """
 
         epoch_to_mins = 60 / self.subject_object.epoch_len
 
@@ -223,27 +225,27 @@ class SleepLog:
             for day in self.sleep_data:
                 for index, value in enumerate(day):
                     if value != "N/A":
-                        if index == 1:
+                        if index == 0:
                             ax1.axvline(x=value, color="green", label="Woke up")
 
-                        if index == 4:
+                        if index == 3:
                             ax1.axvline(x=value, color="green", label="To bed")
 
-                        if index == 2:
+                        if index == 1:
                             ax1.axvline(x=value, color="red", label="Nap")
 
-                        if index == 3:
+                        if index == 2:
                             ax1.axvline(x=value, color="red", label="Wake up from nap")
 
             # Fills in region where participant was asleep
             for day1, day2 in zip(self.sleep_data[:], self.sleep_data[1:]):
                 try:
                     # Overnight --> green
-                    ax1.fill_betweenx(x1=day1[4], x2=day2[1], y=np.arange(0, max(self.wrist_svm)),
+                    ax1.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, max(self.wrist_svm)),
                                       color='green', alpha=0.35)
 
                     # Naps --> red
-                    ax1.fill_betweenx(x1=day1[3], x2=day1[2], y=np.arange(0, max(self.wrist_svm)),
+                    ax1.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, max(self.wrist_svm)),
                                       color='red', alpha=0.35)
                 except AttributeError:
                     pass
@@ -261,27 +263,27 @@ class SleepLog:
             for day in self.sleep_data:
                 for index, value in enumerate(day):
                     if value != "N/A":
-                        if index == 1:
+                        if index == 0:
                             ax2.axvline(x=value, color="green", label="Woke up")
 
-                        if index == 4:
+                        if index == 3:
                             ax2.axvline(x=value, color="green", label="To bed")
 
-                        if index == 2:
+                        if index == 1:
                             ax2.axvline(x=value, color="red", label="Nap")
 
-                        if index == 3:
+                        if index == 2:
                             ax2.axvline(x=value, color="red", label="Wake up from nap")
 
             # Fills in region where participant was asleep
             for day1, day2 in zip(self.sleep_data[:], self.sleep_data[1:]):
                 try:
                     # Overnight --> green
-                    ax2.fill_betweenx(x1=day1[4], x2=day2[1], y=np.arange(0, max(self.ankle_svm)),
+                    ax2.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, max(self.ankle_svm)),
                                       color='green', alpha=0.35)
 
                     # Naps --> red
-                    ax2.fill_betweenx(x1=day1[3], x2=day1[2], y=np.arange(0, max(self.ankle_svm)),
+                    ax2.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, max(self.ankle_svm)),
                                       color='red', alpha=0.35)
 
                 except AttributeError:
@@ -301,28 +303,28 @@ class SleepLog:
             for day in self.sleep_data:
                 for index, value in enumerate(day):
                     if value != "N/A":
-                        if index == 1:
+                        if index == 0:
                             ax3.axvline(x=value, color="green", label="Woke up")
 
-                        if index == 4:
+                        if index == 3:
                             ax3.axvline(x=value, color="green", label="To bed")
 
-                        if index == 2:
+                        if index == 1:
                             ax3.axvline(x=value, color="red", label="Nap")
 
-                        if index == 3:
+                        if index == 2:
                             ax3.axvline(x=value, color="red", label="Wake up from nap")
 
             # Fills in region where participant was asleep
             for day1, day2 in zip(self.sleep_data[:], self.sleep_data[1:]):
                 try:
                     # Overnight --> green
-                    ax3.fill_betweenx(x1=day1[4], x2=day2[1], y=np.arange(min([i for i in self.hr if i is not None]),
+                    ax3.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(min([i for i in self.hr if i is not None]),
                                                                           max([i for i in self.hr if i is not None])),
                                       color='green', alpha=0.35)
 
                     # Naps --> red
-                    ax3.fill_betweenx(x1=day1[3], x2=day1[2], y=np.arange(min([i for i in self.hr if i is not None]),
+                    ax3.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(min([i for i in self.hr if i is not None]),
                                                                           max([i for i in self.hr if i is not None])),
                                       color='red', alpha=0.35)
                 except AttributeError:
