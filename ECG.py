@@ -11,6 +11,7 @@ from datetime import datetime
 import csv
 import progressbar
 from matplotlib.ticker import PercentFormatter
+from random import randint
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -89,7 +90,7 @@ class ECG:
 
             del self.ecg
 
-            # Performs quality control check on raw data and epochs data
+        # Performs quality control check on raw data and epochs data
         if not self.from_processed:
             self.epoch_validity, self.epoch_hr = self.check_quality()
 
@@ -130,7 +131,7 @@ class ECG:
         epoch_hr = []
 
         bar = progressbar.ProgressBar(maxval=len(self.raw),
-                                      widgets=[progressbar.Bar('>', '[', ']'), ' ',
+                                      widgets=[progressbar.Bar('>', '', '|'), ' ',
                                                progressbar.Percentage()])
         bar.start()
 
@@ -294,7 +295,7 @@ class ECG:
             if i is None:
                 perc_hrr_final.append(None)
 
-        return perc_hrr
+        return perc_hrr_final
 
     def calculate_intensity(self):
         """Calculates intensity category based on %HRR ranges.
@@ -377,6 +378,50 @@ class ECG:
         plt.title("Heart Rate Histogram")
         plt.legend(loc='upper left')
         plt.show()
+
+    def plot_random_qc(self):
+        """Method that generates a random 10-minute sample of data. Overlays filtered data with quality check output."""
+
+        # Generates random start index
+        start_index = randint(0, len(self.filtered) - 15 * 60 * self.sample_rate)
+
+        # Rounds random start to an index that corresponds to start of an epoch
+        start_index -= start_index % (self.epoch_len * self.sample_rate)
+
+        # End index: 10-minute window
+        end_index = start_index + 15 * 60 * self.sample_rate
+
+        # Epoch start index
+        epoch_start = int(start_index / self.epoch_len / self.sample_rate)
+        epoch_end = epoch_start + int(15 * 60 / self.epoch_len)
+
+        # Data point index converted to seconds
+        seconds_seq_raw = np.arange(0, 15 * 60 * self.sample_rate) / self.sample_rate
+        seconds_seq_epoch = np.arange(0, 15 * 60, self.epoch_len)
+
+        # Plot
+        fig, (ax1, ax2) = plt.subplots(2, sharex='col', figsize=(10, 7))
+
+        ax1.set_title("Participant {}: Random Quality Check Sample (Index = {})".format(self.filename, start_index))
+
+        # Filtered ECG data
+        ax1.plot(seconds_seq_raw, self.filtered[start_index:end_index], color='red', label="Filtered ECG")
+        ax1.set_ylabel("Voltage")
+        ax1.legend(loc='upper left')
+
+        ax1.set_xlabel("Seconds")
+
+        # Epoched QC data
+        try:
+            word_data = ["Valid" if i == 0 else "Invalid" for i in self.epoch_validity[epoch_start:epoch_end]]
+            ax2.bar(seconds_seq_epoch, word_data,
+                    width=self.epoch_len, align="edge", edgecolor='black', color='grey', label="Validity: 0=valid")
+
+            ax2.set_yticklabels(["Valid", "Invalid"], minor=False)
+            ax2.plot()
+
+        except TypeError:
+            pass
 
     def write_output(self):
         """Writes csv of epoched timestamps, validity category."""
