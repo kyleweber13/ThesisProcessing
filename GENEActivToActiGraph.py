@@ -5,129 +5,266 @@ import matplotlib.pyplot as plt
 import scipy.signal
 import math
 
+# Cut-points for wrist from https://www.actigraphcorp.com/research-database/
+#                           pm-development-of-wrist-and-ankle-cut-points-for-youth-with-the-actigraph-accelerometer/
+# Vertical axis: sedentary ≤ 105, moderate ≥ 262, and vigorous ≥ 565 counts/5 sec
+# Vector magnitude: sedentary ≤ 275, moderate ≥ 416, and vigorous ≥ 778 counts per 5 sec
+
 # RAW IMPORT =========================================================================================================
-# Loads in raw data. Creates 3-column array
 
-x = ImportEDF.GENEActiv(filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3036_01_GA_RWrist_Accelerometer.EDF",
-                        load_raw=True, start_offset=0, end_offset=0)
 
-raw_accel = np.asarray([x.x[0:75*86400], x.y[0:75*86400], x.z[0:75*86400]])
-raw_mag = [abs(math.sqrt(math.pow(x.x[i], 2) + math.pow(x.y[i], 2) + math.pow(x.z[i], 2)) - 1) for i in range(75*86400)]
+def import_edf(filepath):
+    # Loads in raw data. Creates 3-column array
 
-# STEP 0: DOWNSAMPLES TO 30Hz ========================================================================================
-# Downsamples raw data to 30Hz
-print("\n" + "Resampling data to 30Hz...")
-accel30 = scipy.signal.resample(x=raw_accel, num=int(len(raw_accel[0])*30/75), axis=1)
-mag30 = scipy.signal.resample(x=raw_mag, num=int(len(raw_accel[0])*30/75))
+    data = ImportEDF.GENEActiv(filepath=filepath, load_raw=True, start_offset=0, end_offset=0)
 
-# STEP 1: 0.01-7Hz BP FILTERING ======================================================================================
-# Applies 0.01-7Hz bandpass filter to 30Hz data. I chose order 3.
+    return data
 
-print("\n" + "Applying 0.01-7Hz bandpass filter...")
-step1_filter = Filtering.filter_signal(data=accel30, type="bandpass",
-                                       low_f=0.01, high_f=7, filter_order=3, sample_f=75)
 
-mag_step1_filter = Filtering.filter_signal(data=mag30, type="bandpass",
-                                           low_f=0.01, high_f=7, filter_order=3, sample_f=75)
+class ActigraphConversion:
 
-del accel30, mag30
+    def __init__(self, raw_data=None, epoch_len=15, start_day=0, end_day=1):
 
-# STEP 2: 0.29-1.63Hz BANDSTOP FILTERING ==============================================================================
-# Unclear on algorithm. May be bandpass or bandstop filter in range 0.29-1.63 Hz. Applies it to 30Hz data
+        self.raw_data = raw_data
+        self.sample_rate = self.raw_data.sample_rate
 
-print("\n" + "Applying mystical Step #2 filter...")
+        self.epoch_len = epoch_len
 
-"""step2_filter = Filtering.filter_signal(data=step1_filter, type="lowpass",
-                                       low_f=0.29, high_f=None, filter_order=1, sample_f=30)
+        self.start_day = start_day
+        self.end_day = end_day
 
-step2_filter = Filtering.filter_signal(data=step2_filter, type="highpass",
-                                       low_f=None, high_f=1.63, filter_order=1, sample_f=30)"""
+        self.raw_accel = None
+        self.raw_mag = None
 
-step2_filter = Filtering.filter_signal(data=step1_filter, type="bandpass",
-                                       low_f=0.29, high_f=1.63, filter_order=1, sample_f=30)
+        # Step 1 data
+        self.accel30hz = None
+        self.mag_start_30hz = None
 
-mag_step2_filter = Filtering.filter_signal(data=mag_step1_filter, type="bandpass",
-                                           low_f=0.29, high_f=1.63, filter_order=1, sample_f=30)
+        # Step 2 data
+        self.step1_filter = None
+        self.mag_start_step1_filter = None
 
-del step1_filter, mag_step1_filter
+        # Step 3 data
+        self.step2_filter = None
+        self.mag_start_step2_filter = None
 
-# STEP 3: DOWNSAMPLE TO 10HZ =========================================================================================
-# Downsamples ActiGraph filtered data to 10Hz
+        # Step 4 data
+        self.accel10hz = None
+        self.mag_start_10hz = None
 
-print("\n" + "Resampling down to 10Hz...")
+        # Step 5 data
+        self.truncated = None
+        self.mag_start_truncated = None
 
-accel10 = scipy.signal.resample(x=step2_filter, num=int(len(step2_filter[0])*10/30), axis=1)
-mag10 = scipy.signal.resample(x=mag_step2_filter, num=int(len(mag_step2_filter)*10/30))
+        # Step 6 data
+        self.rectified = None
+        self.mag_start_rectified = None
 
-del step2_filter, mag_step2_filter
+        # Step 7 data
+        self.deadband = None
+        self.mag_start_deadband = None
 
-# STEP 4: TRUNCATE TO 2.13G's ========================================================================================
-# Clips 10Hz data at ± 2.13 G's
+        # Step 8 data
+        self.bit8 = None
+        self.mag_start_bit8 = None
+        self.mag_end_8bit = None
 
-print("\n" + "Truncating data to ± 2.13 G's...")
+        self.epoch_y = None
+        self.epoch_mag_start = None
+        self.epoch_mag_end = None
 
-truncated = np.copy(accel10)
-truncated[truncated >= 2.13] = 2.13
-truncated[truncated <= -2.13] = -2.13
+        """RUNS METHODS"""
+        self.crop_data()
+        self.downsample_30hz()  # Step 0
+        self.antialias_filter()  # Step 1
+        self.actigraph_filter()  # Step 2
+        self.downsample_10hz()  # Step 3
+        self.truncate_data()  # Step 4
+        self.rectify_data()  # Step 5
+        self.deadband_filter()  # Step 6
+        self.convert_to_8bit()  # Step 7
+        self.epoch_data()  # Step 8
 
-mag_truncated = np.copy(mag10)
-mag_truncated[mag_truncated >= 2.13] = 2.13
-mag_truncated[mag_truncated <= -2.13] = -2.13
+        self.plot_epoched()
 
-del accel10, mag10
+    def crop_data(self):
 
-# STEP 5: RECTIFICATION ==============================================================================================
-# Takes absolute value of truncated data
+        self.raw_accel = np.asarray([self.raw_data.x[self.sample_rate * 86400 * self.start_day:
+                                                     self.sample_rate * 86400 * self.end_day],
+                                     self.raw_data.y[self.sample_rate * 86400 * self.start_day:
+                                                     self.sample_rate * 86400 * self.end_day],
+                                     self.raw_data.x[self.sample_rate * 86400 * self.start_day:
+                                                     self.sample_rate * 86400 * self.end_day]])
 
-print("\n" + "Rectifying data...")
+        # Subtracts gravity
+        self.raw_mag = [abs(math.sqrt((math.pow(self.raw_data.x[i], 2) +
+                                       math.pow(self.raw_data.y[i], 2) +
+                                       math.pow(self.raw_data.z[i], 2))) - 1)
+                        for i in range(int((self.end_day - self.start_day) * self.sample_rate * 86400))]
 
-rectified = np.absolute(truncated)
-mag_rectified = np.absolute(mag_truncated)
+        # Does not subtract gravity
+        """self.raw_mag = [abs(math.sqrt((math.pow(self.raw_data.x[i], 2) +
+                                       math.pow(self.raw_data.y[i], 2) +
+                                       math.pow(self.raw_data.z[i], 2))))
+                        for i in range(int((self.end_day - self.start_day) * self.sample_rate * 86400))]"""
 
-del truncated
+    def downsample_30hz(self):
 
-# STEP 6: DEADBAND BELOW 0.068G's ====================================================================================
-# Changes values below 0.068G's to 0
+        # STEP 0: DOWNSAMPLES TO 30Hz =================================================================================
+        print("\n" + "Resampling data to 30Hz...")
 
-print("\n" + "Applying deadband (< 0.068 G's) filter...")
+        self.accel30hz = scipy.signal.resample(x=self.raw_accel,
+                                               num=int(len(self.raw_accel[0]) * 30 / self.sample_rate), axis=1)
 
-deadband = np.copy(rectified)
-deadband[deadband <= 0.068] = 0
+        self.mag_start_30hz = scipy.signal.resample(x=self.raw_mag, num=int(len(self.raw_mag) * 30 / self.sample_rate))
 
-mag_deadband = np.copy(mag_rectified)
-mag_deadband[mag_deadband <= 0.068] = 0
+        print("Complete.")
 
-# STEP 7: 8-BIT CONVERSION ===========================================================================================
-# Converts 10Hz deadband data to the equivalent 8-bit resolution
+    def antialias_filter(self):
+        # STEP 1: 0.01-7Hz BP FILTERING ==============================================================================
 
-print("\n" + "Converting data to 8-bit resolution...")
+        print("\n" + "Applying 0.01-7Hz bandpass filter...")
 
-# Bins representing value ranges covered by what would be 8-bit resolution: range = 0 to 2.13 G's
-bins = np.linspace(start=0, stop=2.13, num=128)
+        self.step1_filter = Filtering.filter_signal(data=self.accel30hz, type="bandpass",
+                                                    low_f=0.01, high_f=7, filter_order=1, sample_f=self.sample_rate)
 
-# Arrays of what bin each value falls into
-digititzed_x = np.digitize(x=deadband[0], bins=bins)
-digititzed_y = np.digitize(x=deadband[1], bins=bins)
-digititzed_z = np.digitize(x=deadband[2], bins=bins)
+        self.mag_start_step1_filter = Filtering.filter_signal(data=self.mag_start_30hz, type="bandpass",
+                                                              low_f=0.01, high_f=7,
+                                                              filter_order=1, sample_f=self.sample_rate)
 
-digititzed_mag = np.digitize(x=mag_deadband, bins=bins)
+        print("Complete.")
 
-# Array of actual G values that correspond to each bin
-bit8 = np.array([[bins[1]*i for i in digititzed_x],
-                [bins[1]*i for i in digititzed_y],
-                [bins[1]*i for i in digititzed_z]])
+    def actigraph_filter(self):
+        # STEP 2: 0.29-1.63Hz BANDPASS FILTERING =====================================================================
 
-mag_bit8 = np.array([bins[1]*i for i in digititzed_mag])
+        print("\n" + "Applying mystical Step #2 filter...")
 
-del deadband, digititzed_x, digititzed_y, digititzed_z, digititzed_mag
+        self.step2_filter = Filtering.filter_signal(data=self.step1_filter, type="bandpass",
+                                                    low_f=0.29, high_f=1.63, filter_order=1, sample_f=30)
 
-# STEP 8: EPOCHING ===================================================================================================
-# Epochs into 1-second and 60-second epochs
+        self.mag_start_step2_filter = Filtering.filter_signal(data=self.mag_start_step1_filter, type="bandpass",
+                                                              low_f=0.29, high_f=1.63, filter_order=1, sample_f=30)
 
-print("\n" + "Epoching the data...")
+        print("Complete.")
 
-epoched1s_y = [sum(bit8[1, i:i+10]) for i in np.arange(1, len(bit8[1]), 10)]
-epoched60s_y = [sum(epoched1s_y[i:i+60]) for i in np.arange(0, len(epoched1s_y), 60)]
+    def downsample_10hz(self):
+        # STEP 3: DOWNSAMPLE TO 10HZ =================================================================================
 
-epoched1s_mag = [sum(mag_bit8[i:i+10]) for i in np.arange(1, len(mag_bit8), 10)]
-epoched60s_mag = [sum(mag_bit8[i:i+60]) for i in np.arange(1, len(epoched1s_mag), 60)]
+        print("\n" + "Resampling down to 10Hz...")
+
+        self.accel10hz = scipy.signal.resample(x=self.step2_filter,
+                                               num=int(len(self.step2_filter[0]) * 10 / 30), axis=1)
+
+        self.mag_start_10hz = scipy.signal.resample(x=self.mag_start_step2_filter,
+                                                    num=int(len(self.mag_start_step2_filter) * 10 / 30))
+
+        print("Complete.")
+
+    def truncate_data(self):
+        # STEP 4: TRUNCATE TO 2.13G's ================================================================================
+
+        print("\n" + "Truncating data to ± 2.13 G's...")
+
+        self.truncated = np.copy(self.accel10hz)
+        self.truncated[self.truncated >= 2.13] = 2.13
+        self.truncated[self.truncated <= -2.13] = -2.13
+
+        self.mag_start_truncated = np.copy(self.mag_start_10hz)
+        self.mag_start_truncated[self.mag_start_truncated >= 2.13] = 2.13
+
+        print("Complete.")
+
+    def rectify_data(self):
+        # STEP 5: RECTIFICATION ======================================================================================
+
+        print("\n" + "Rectifying data...")
+
+        self.rectified = np.absolute(self.truncated)
+        self.mag_start_rectified = np.absolute(self.mag_start_truncated)
+
+        print("Complete.")
+
+    def deadband_filter(self):
+        # STEP 6: DEADBAND BELOW 0.068G's ============================================================================
+
+        print("\n" + "Applying deadband (< 0.068 G's) filter...")
+
+        self.deadband = np.copy(self.rectified)
+        self.deadband[self.deadband <= 0.068] = 0
+
+        self.mag_start_deadband = np.copy(self.mag_start_rectified)
+        self.mag_start_deadband[self.mag_start_deadband <= 0.068] = 0
+
+        print("Complete.")
+
+    def convert_to_8bit(self):
+        # STEP 7: 8-BIT CONVERSION ===================================================================================
+
+        print("\n" + "Converting data to 8-bit resolution...")
+
+        # Bins representing value ranges covered by what would be 8-bit resolution: range = 0 to 2.13 G's
+        bins = np.linspace(start=0, stop=2.13, num=128)
+
+        # Arrays of what bin each value falls into
+        digititzed_x = np.digitize(x=self.deadband[0], bins=bins)
+        digititzed_y = np.digitize(x=self.deadband[1], bins=bins)
+        digititzed_z = np.digitize(x=self.deadband[2], bins=bins)
+
+        digititzed_mag = np.digitize(x=self.mag_start_deadband, bins=bins)
+
+        # Array of actual G values that correspond to each bin
+        self.bit8 = np.array([[bins[1]*i for i in digititzed_x],
+                              [bins[1]*i for i in digititzed_y],
+                              [bins[1]*i for i in digititzed_z]])
+
+        self.mag_start_bit8 = np.array([bins[1]*i for i in digititzed_mag])
+
+        # Subtracts gravity
+        """self.mag_end_8bit = [abs(math.sqrt(math.pow(self.bit8[0, i], 2) +
+                                           math.pow(self.bit8[1, i], 2) +
+                                           math.pow(self.bit8[2, i], 2)) - 1)
+                             for i in range(len(self.bit8[0]))]"""
+
+        # Does not subtract gravity
+        self.mag_end_8bit = [abs(math.sqrt(math.pow(self.bit8[0, i], 2) +
+                                           math.pow(self.bit8[1, i], 2) +
+                                           math.pow(self.bit8[2, i], 2)))
+                             for i in range(len(self.bit8[0]))]
+
+        print("Complete.")
+
+    def epoch_data(self):
+        # STEP 8: EPOCHING ===========================================================================================
+
+        print("\n" + "Epoching the data...")
+
+        self.epoch_y = [sum(self.bit8[1, i:i + self.epoch_len * 10])
+                        for i in np.arange(0, len(self.bit8[1]), self.epoch_len)]
+
+        self.epoch_mag_start = [sum(self.mag_start_bit8[i:i + self.epoch_len * 10])
+                                for i in np.arange(1, len(self.mag_start_bit8), self.epoch_len)]
+
+        self.epoch_mag_end = [sum(self.mag_end_8bit[i: i + self.epoch_len * 10])
+                              for i in np.arange(1, len(self.mag_end_8bit), self.epoch_len)]
+
+        print("Complete.")
+
+    def plot_epoched(self):
+
+        fig, (ax1) = plt.subplots(1, figsize=(10, 7))
+
+        ax1.plot(np.arange(0, len(self.epoch_y))/(self.epoch_len/60), self.epoch_y, color='red', label="Y-axis")
+
+        ax1.plot(np.arange(0, len(self.epoch_mag_start))/(self.epoch_len/60), self.epoch_mag_start,
+                 color='black', label="Magnitude Start")
+
+        ax1.plot(np.arange(0, len(self.epoch_mag_end))/(self.epoch_len/60), self.epoch_mag_end,
+                 color='blue', label="Magnitude End")
+
+        ax1.legend(loc='upper left')
+        ax1.set_xlabel("Minutes")
+        ax1.set_title("{}-second epoched data".format(self.epoch_len))
+
+
+# x = import_edf("/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3036_01_GA_RWrist_Accelerometer.EDF")
+ag = ActigraphConversion(raw_data=x, epoch_len=60, start_day=0, end_day=1)
