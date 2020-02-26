@@ -168,7 +168,6 @@ class ValidData:
         if self.hr_intensity is not None and self.hr is None:
             self.hr = [self.hr_intensity[i] if self.sleep_validity[i] == 0 else None for i in range(self.data_len)]
 
-        print(len(self.hr), len(self.sleep_validity), self.data_len)
         if self.hr_intensity is not None and self.hr is not None:
             self.hr = [self.hr[i] if self.sleep_validity[i] == 0 else None for i in range(self.data_len)]
 

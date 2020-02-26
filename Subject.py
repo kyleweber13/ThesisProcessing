@@ -8,6 +8,7 @@ import ModelStats
 import FindValidEpochs
 
 import os
+import csv
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import datetime
@@ -196,8 +197,9 @@ class Subject:
         ax1.set_title("Multi-Device Data: {}".format(self.subjectID))
 
         # Timestamp x-axis formatting
-        xfmt = mdates.DateFormatter("%a, %I:%M %p")
-        locator = mdates.HourLocator(byhour=[0, 12], interval=1)
+        # xfmt = mdates.DateFormatter("%a, %I:%M %p")
+        xfmt = mdates.DateFormatter("%a %b %d, %H:%M")
+        locator = mdates.HourLocator(byhour=[0, 8, 16], interval=1)
 
         # WRIST
         try:
@@ -305,26 +307,41 @@ class Subject:
 
 
 x = Subject(raw_edf_folder="/Users/kyleweber/Desktop/Data/OND07/EDF/",
-            subjectID=3037,
-            load_ecg=True, load_ankle=True, load_wrist=True,
-            load_raw_ecg=False, load_raw_ankle=True, load_raw_wrist=False,
+            subjectID=3036,
+            load_ecg=False, load_ankle=False, load_wrist=True,
+            load_raw_ecg=False, load_raw_ankle=False, load_raw_wrist=True,
+            from_processed=False,
 
             treadmill_processed=True,
 
             rest_hr_window=30,
             n_epochs_rest_hr=30,
             filter_ecg=True,
-
-            epoch_len=15,
-            from_processed=True,
+            epoch_len=5,
 
             treadmill_log_file="/Users/kyleweber/Desktop/Data/OND07/Treadmill_Log.csv",
             demographics_file="/Users/kyleweber/Desktop/Data/OND07/Participant Information/Demographics_Data.csv",
-            sleeplog_folder="/Users/kyleweber/Desktop/Data/OND07/Sleep Logs/",
+            # sleeplog_folder="/Users/kyleweber/Desktop/Data/OND07/Sleep Logs/",
             output_dir="/Users/kyleweber/Desktop/Data/OND07/Processed Data/",
 
             write_results=False,
             plot_data=False)
 
-# TODO
-# More dict writers for results
+
+"""output_dict = {"Valid ECG %": 100 - x.ecg.quality_report["Percent invalid"],
+               "ECG Hours Lost": x.ecg.quality_report["Hours lost"],
+               "Sleep %": x.sleep.sleep_report["Sleep%"],
+               "Sleep Hours Lost": x.sleep.sleep_report["SleepDuration"]/60,
+               "Total Valid %": x.valid.percent_valid}
+
+with open("/Users/kyleweber/Desktop/QC Data/" + x.subjectID + "_ValidityData.csv", "w") as outfile:
+
+    fieldnames = ['Valid ECG %', 'ECG Hours Lost', 'Sleep %', 'Sleep Hours Lost', 'Total Valid %']
+    writer = csv.DictWriter(outfile, fieldnames=fieldnames)
+
+    writer.writeheader()
+    writer.writerow(output_dict)"""
+
+
+"""print("PERCENT VALID: ", 100 - x.ecg.quality_report["Percent invalid"])
+x.ecg.plot_random_qc()"""

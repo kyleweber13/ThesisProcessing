@@ -8,7 +8,6 @@ import numpy as np
 from datetime import datetime
 import pandas as pd
 
-
 # ConvertFile.bin_to_edf(file_in="", out_path="/Users/kyleweber/Desktop/Data/Conversion Folder/")
 
 
@@ -103,5 +102,11 @@ class Data:
                 ax2.fill_between(x=[on, off], y1=0, y2=max(self.accel_epoch.svm), color='green', alpha=0.15)
                 ax3.fill_between(x=[on, off], y1=min(self.temperature.temp), y2=max(self.temperature.temp),
                                  color='green', alpha=0.15)
-        except:
+
+        except (IndexError, AttributeError):
             pass
+
+
+x = Data(accel_filepath="/Users/kyleweber/Desktop/Test4_Accelerometer.EDF",
+         temperature_filepath="/Users/kyleweber/Desktop/Test4_Temperature.EDF",
+         log_filepath="/Users/kyleweber/Desktop/Test4.xlsx")

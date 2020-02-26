@@ -388,7 +388,7 @@ class ECG:
         # Rounds random start to an index that corresponds to start of an epoch
         start_index -= start_index % (self.epoch_len * self.sample_rate)
 
-        # End index: 10-minute window
+        # End index: 15-minute window
         end_index = start_index + 15 * 60 * self.sample_rate
 
         # Epoch start index
@@ -400,7 +400,7 @@ class ECG:
         seconds_seq_epoch = np.arange(0, 15 * 60, self.epoch_len)
 
         # Plot
-        fig, (ax1, ax2) = plt.subplots(2, sharex='col', figsize=(10, 7))
+        fig, (ax1, ax2, ax3) = plt.subplots(3, sharex='col', figsize=(10, 7))
 
         ax1.set_title("Participant {}: Random Quality Check Sample (Index = {})".format(self.filename, start_index))
 
@@ -409,16 +409,21 @@ class ECG:
         ax1.set_ylabel("Voltage")
         ax1.legend(loc='upper left')
 
-        ax1.set_xlabel("Seconds")
+        # Filtered ECG data
+        ax2.plot(seconds_seq_raw, self.raw[start_index:end_index], color='red', label="Raw ECG")
+        ax2.set_ylabel("Voltage")
+        ax2.legend(loc='upper left')
+
+        ax3.set_xlabel("Seconds")
 
         # Epoched QC data
         try:
             word_data = ["Valid" if i == 0 else "Invalid" for i in self.epoch_validity[epoch_start:epoch_end]]
-            ax2.bar(seconds_seq_epoch, word_data,
-                    width=self.epoch_len, align="edge", edgecolor='black', color='grey', label="Validity: 0=valid")
+            ax3.bar(seconds_seq_epoch, word_data,
+                    width=self.epoch_len, align="edge", edgecolor='black', color='grey')
 
-            ax2.set_yticklabels(["Valid", "Invalid"], minor=False)
-            ax2.plot()
+            # ax3.set_yticklabels(["Valid", "Invalid"], minor=False)
+            ax3.plot()
 
         except TypeError:
             pass
@@ -450,7 +455,7 @@ class CheckQuality:
        19(3). 832-838.
     """
 
-    def __init__(self, ecg_object, start_index, epoch_len=15):
+    def __init__(self, ecg_object, start_index, voltage_thresh=250, epoch_len=15):
         """Initialization method.
 
         :param
@@ -461,6 +466,7 @@ class CheckQuality:
         -epoch_len: window length in seconds over which algorithm is run; 15 seconds by default
         """
 
+        self.voltage_thresh = voltage_thresh
         self.epoch_len = epoch_len
         self.fs = ecg_object.sample_rate
         self.start_index = start_index
@@ -628,7 +634,7 @@ class CheckQuality:
         -Rule 1: HR needs to be between 40 and 180bpm
         -Rule 2: no RR interval can be more than 3 seconds
         -Rule 3: the ratio of the longest to shortest RR interval is less than 2.2
-        -Rule 4: the amplitude range of the raw ECG voltage must exceed 250microV (approximate range for non-wear)
+        -Rule 4: the amplitude range of the raw ECG voltage must exceed n microV (approximate range for non-wear)
         -Rule 5: the average correlation coefficient between each beat and the "average" beat must exceed 0.66
         -Verdict: all rules need to be passed
         """
@@ -659,10 +665,10 @@ class CheckQuality:
             self.valid_ratio = True
 
         # Rule 4: the range of the raw ECG signal needs to be >= 250 microV ------------------------------------------
-        if self.volt_range <= 250:
+        if self.volt_range <= self.voltage_thresh:
             self.valid_range = False
 
-        if self.volt_range > 250:
+        if self.volt_range > self.voltage_thresh:
             self.valid_range = True
 
         # Rule 5: Determines if average R value is above threshold of 0.66 -------------------------------------------

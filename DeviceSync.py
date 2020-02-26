@@ -15,8 +15,14 @@ def crop_start(subject_object):
     -start_crop_dict: dictionary of values for each device that correspond to number of data points to skip.
     """
 
+    # Skips device synchronization if only one device is loaded
+    if subject_object.load_ecg + subject_object.load_ankle + subject_object.load_wrist < 2:
+        start_crop_dict = {"Ankle": 0, "Wrist": 0, "ECG": 0}
+
+        return start_crop_dict
+
     print()
-    print("======================================== DEVICE SYNCRONIZATION ======================================")
+    print("======================================= DEVICE SYNCHRONIZATION ======================================")
 
     print("\n" + "Performing device sync...")
 
@@ -153,6 +159,12 @@ def crop_end(subject_object):
     :argument
     -subject_object: object of class Subject. Needs to contain start_offset_dict from crop_start function.
     """
+
+    # Skips device synchronization if only one device is loaded
+    if subject_object.load_ecg + subject_object.load_ankle + subject_object.load_wrist < 2:
+        end_crop_dict = {"Ankle": 0, "Wrist": 0, "ECG": 0}
+
+        return end_crop_dict
 
     print("\n" + "Cropping data so each device has the same file duration...")
 
@@ -295,3 +307,27 @@ def crop_end(subject_object):
                                                                       ecg_end_offset))
 
     return end_crop_dict
+
+
+def load_file(ecg_filepath):
+    wd = "/Volumes/nimbal$/Data/OND07/Raw data/Bittium/"
+
+    ecg_file = pyedflib.EdfReader(wd + ecg_filepath)
+    ecg_duration = ecg_file.getFileDuration()
+    print("=======================================================")
+    print(ecg_filepath)
+    print("Duration: {} hours".format(round(ecg_duration/3600, 2)))
+
+
+"""
+import os
+files = sorted(os.listdir("/Volumes/nimbal$/Data/OND07/Raw data/Bittium/"))
+
+for file in files:
+    if ".EDF" not in file and file != ".DS_Store":
+
+        all_files = os.listdir("/Volumes/nimbal$/Data/OND07/Raw data/Bittium/" + file)
+
+        for new_files in all_files:
+            load_file("/Volumes/nimbal$/Data/OND07/Raw data/Bittium/" + file + "/" + new_files)
+"""

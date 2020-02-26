@@ -258,8 +258,10 @@ class Ankle:
                     width=15, edgecolor='black', color='grey', alpha=0.75, align="edge")
             ax2.set_ylabel("Counts per {}s".format(self.epoch_len))
 
-            ax2.axhline(y=self.model.linear_dict["Meaningful threshold"], label="33%Pref", linestyle='dashed',
+            ax2.axhline(y=self.model.linear_dict["Meaningful threshold"], label="33%PrefSpeed", linestyle='dashed',
                         color='red')
+            ax2.axhline(y=self.treadmill.avg_walk_counts[2], label="PrefSpeed", linestyle='dashed',
+                        color='green')
 
             ax2.legend(loc='upper left')
 
@@ -533,25 +535,29 @@ class AnkleModel:
         self.output_dir = ankle_object.output_dir
         self.anklemodel_outfile = self.output_dir + "Model Output/" + "{}_IntensityData.csv".format(self.file_id)
 
-        # Index multiplier for different epoch lengths since treadmill data processed with 15-second epochs
-        self.walk_indexes = self.scale_epoch_indexes()
+        try:
+            # Index multiplier for different epoch lengths since treadmill data processed with 15-second epochs
+            self.walk_indexes = self.scale_epoch_indexes()
 
-        # Adds average count data to self.tm_object since it has to be run in a weird order
-        self.calculate_average_counts()
+            # Adds average count data to self.tm_object since it has to be run in a weird order
+            self.calculate_average_counts()
 
-        # Values from regression equation
-        self.r2 = None
+            # Values from regression equation
+            self.r2 = None
 
-        self.linear_dict, self.linear_speed = self.calculate_linear_regression()
-        self.quad_dict, self.quad_speed = self.calculate_quad_regression()
-        self.log_dict, self.log_speed = None, None
+            self.linear_dict, self.linear_speed = self.calculate_linear_regression()
+            self.quad_dict, self.quad_speed = self.calculate_quad_regression()
+            self.log_dict, self.log_speed = None, None
 
-        self.predicted_mets, self.epoch_intensity, \
-        self.intensity_totals = self.calculate_intensity(self.linear_speed)
+            self.predicted_mets, self.epoch_intensity, \
+            self.intensity_totals = self.calculate_intensity(self.linear_speed)
 
-        # Predicted outcome measures from linear regression
-        self.epoch_intensity_valid = None
-        self.intensity_totals_valid = None
+            # Predicted outcome measures from linear regression
+            self.epoch_intensity_valid = None
+            self.intensity_totals_valid = None
+
+        except IndexError:
+            pass
 
         if self.write_results:
             self.write_anklemodel()

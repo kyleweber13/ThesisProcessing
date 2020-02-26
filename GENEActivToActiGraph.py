@@ -85,7 +85,7 @@ class ActigraphConversion:
         self.convert_to_8bit()  # Step 7
         self.epoch_data()  # Step 8
 
-        self.plot_epoched()
+        # self.plot_epoched()
 
     def crop_data(self):
 
@@ -239,13 +239,13 @@ class ActigraphConversion:
         print("\n" + "Epoching the data...")
 
         self.epoch_y = [sum(self.bit8[1, i:i + self.epoch_len * 10])
-                        for i in np.arange(0, len(self.bit8[1]), self.epoch_len)]
+                        for i in np.arange(0, len(self.bit8[1]), self.epoch_len * 10)]
 
         self.epoch_mag_start = [sum(self.mag_start_bit8[i:i + self.epoch_len * 10])
-                                for i in np.arange(1, len(self.mag_start_bit8), self.epoch_len)]
+                                for i in np.arange(1, len(self.mag_start_bit8), self.epoch_len * 10)]
 
         self.epoch_mag_end = [sum(self.mag_end_8bit[i: i + self.epoch_len * 10])
-                              for i in np.arange(1, len(self.mag_end_8bit), self.epoch_len)]
+                              for i in np.arange(1, len(self.mag_end_8bit), self.epoch_len * 10)]
 
         print("Complete.")
 
@@ -265,6 +265,39 @@ class ActigraphConversion:
         ax1.set_xlabel("Minutes")
         ax1.set_title("{}-second epoched data".format(self.epoch_len))
 
+    def plot_steps(self):
+
+        fig, axs = plt.subplots(nrows=4, ncols=1, sharex='col', figsize=(10, 7))
+        axs[0].set_title("Most Processing Steps")
+
+        axs[0].plot(np.arange(0, len(self.raw_accel[1])) / (self.sample_rate * 60), self.raw_accel[1],
+                    label="Raw_y ({}Hz)".format(self.sample_rate), color='red')
+        axs[0].set_ylabel("G")
+        axs[0].legend(loc='upper left')
+
+        axs[1].plot(np.arange(0, len(self.step2_filter[1])) / (30 * 60), self.step2_filter[1],
+                    label="0.29-1.63Hz BP (30Hz)", color='black')
+        axs[1].plot(np.arange(0, len(self.truncated[1])) / (10 * 60), self.truncated[1],
+                    label="Truncated (10Hz)", color='red')
+        axs[1].set_ylabel("G")
+        axs[1].legend(loc='upper left')
+
+        axs[2].plot(np.arange(0, len(self.rectified[1])) / (10 * 60), self.rectified[1],
+                    label="Rectified (10Hz)", color='black')
+        axs[2].plot(np.arange(0, len(self.bit8[1])) / (10 * 60), self.bit8[1],
+                    label="Deadband + 8-bit (10Hz)", color='red')
+        axs[2].legend(loc='upper left')
+        axs[2].set_ylabel("G")
+
+        axs[3].bar(x=np.arange(0, len(self.epoch_y)) / (60 / self.epoch_len), height=self.epoch_y, align='edge',
+                   color="red", edgecolor='black', width=60 / self.epoch_len,
+                   label="{}-sec epoch (vertical)".format(self.epoch_len))
+        axs[3].legend(loc='upper left')
+        axs[3].set_xlabel("Minutes")
+        axs[3].set_ylabel("Counts")
+
+        plt.show()
+
 
 # x = import_edf("/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3036_01_GA_RWrist_Accelerometer.EDF")
-ag = ActigraphConversion(raw_data=x, epoch_len=60, start_day=0, end_day=1)
+# ag = ActigraphConversion(raw_data=x, epoch_len=60, start_day=0, end_day=1)
