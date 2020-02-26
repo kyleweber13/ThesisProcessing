@@ -1,4 +1,4 @@
-# ThesisProcessingV2
+# ThesisProcessing
 Kyle Weber's MSc Thesis Processing
 
 Programming related to my MSc Kinesiology thesis which involves quantifying activity levels and patterns using
