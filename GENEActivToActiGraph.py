@@ -85,8 +85,6 @@ class ActigraphConversion:
         self.convert_to_8bit()  # Step 7
         self.epoch_data()  # Step 8
 
-        # self.plot_epoched()
-
     def crop_data(self):
 
         self.raw_accel = np.asarray([self.raw_data.x[self.sample_rate * 86400 * self.start_day:
@@ -299,5 +297,5 @@ class ActigraphConversion:
         plt.show()
 
 
-# x = import_edf("/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3036_01_GA_RWrist_Accelerometer.EDF")
-# ag = ActigraphConversion(raw_data=x, epoch_len=60, start_day=0, end_day=1)
+x = import_edf("/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3036_01_GA_RWrist_Accelerometer.EDF")
+ag = ActigraphConversion(raw_data=x, epoch_len=60, start_day=0, end_day=1)
