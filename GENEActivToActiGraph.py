@@ -5,16 +5,15 @@ import matplotlib.pyplot as plt
 import scipy.signal
 import math
 
-# Cut-points for wrist from https://www.actigraphcorp.com/research-database/
-#                           pm-development-of-wrist-and-ankle-cut-points-for-youth-with-the-actigraph-accelerometer/
-# Vertical axis: sedentary ≤ 105, moderate ≥ 262, and vigorous ≥ 565 counts/5 sec
-# Vector magnitude: sedentary ≤ 275, moderate ≥ 416, and vigorous ≥ 778 counts per 5 sec
-
 # RAW IMPORT =========================================================================================================
 
 
 def import_edf(filepath):
-    # Loads in raw data. Creates 3-column array
+    """Loads in raw data using ImportEDF script. Returns GENEActiv class object.
+
+    :argument
+    -filepath: pathway to EDF file
+    """
 
     data = ImportEDF.GENEActiv(filepath=filepath, load_raw=True, start_offset=0, end_offset=0)
 
@@ -24,6 +23,14 @@ def import_edf(filepath):
 class ActigraphConversion:
 
     def __init__(self, raw_data=None, epoch_len=15, start_day=0, end_day=1):
+        """Class that follows the processing steps proposed by Brond, Andersen, and Arvidsson (2017) to convert
+           raw accelerometer data to ActiGraph counts.
+
+        :argument
+        -raw_data: object from import_edf function
+        -epoch_len: epoch lenght, seconds
+        -start_day, end_day: used for cropping data by day
+        """
 
         self.raw_data = raw_data
         self.sample_rate = self.raw_data.sample_rate
@@ -86,6 +93,9 @@ class ActigraphConversion:
         self.epoch_data()  # Step 8
 
     def crop_data(self):
+        """-Crops data according to start_day and end_day arguments.
+           -Calculates vector magnitude for selected section.
+        """
 
         self.raw_accel = np.asarray([self.raw_data.x[self.sample_rate * 86400 * self.start_day:
                                                      self.sample_rate * 86400 * self.end_day],
@@ -107,6 +117,7 @@ class ActigraphConversion:
                         for i in range(int((self.end_day - self.start_day) * self.sample_rate * 86400))]"""
 
     def downsample_30hz(self):
+        """Downsamples data to 30Hz to match typical ActiGraph sampling rate."""
 
         # STEP 0: DOWNSAMPLES TO 30Hz =================================================================================
         print("\n" + "Resampling data to 30Hz...")
@@ -119,6 +130,8 @@ class ActigraphConversion:
         print("Complete.")
 
     def antialias_filter(self):
+        """Applies 0.01 - 7.0 Hz bandpass filter to prevent aliasing."""
+
         # STEP 1: 0.01-7Hz BP FILTERING ==============================================================================
 
         print("\n" + "Applying 0.01-7Hz bandpass filter...")
@@ -133,6 +146,8 @@ class ActigraphConversion:
         print("Complete.")
 
     def actigraph_filter(self):
+        """Applies 0.29 - 1.63 Hz bandpass filter to match on-board ActiGraph processing."""
+
         # STEP 2: 0.29-1.63Hz BANDPASS FILTERING =====================================================================
 
         print("\n" + "Applying mystical Step #2 filter...")
@@ -146,6 +161,8 @@ class ActigraphConversion:
         print("Complete.")
 
     def downsample_10hz(self):
+        """Further downsamples data to 10Hz."""
+
         # STEP 3: DOWNSAMPLE TO 10HZ =================================================================================
 
         print("\n" + "Resampling down to 10Hz...")
@@ -159,6 +176,8 @@ class ActigraphConversion:
         print("Complete.")
 
     def truncate_data(self):
+        """Truncates data to the ± 2.13 G range to match ActiGraph response range."""
+
         # STEP 4: TRUNCATE TO 2.13G's ================================================================================
 
         print("\n" + "Truncating data to ± 2.13 G's...")
@@ -173,6 +192,8 @@ class ActigraphConversion:
         print("Complete.")
 
     def rectify_data(self):
+        """Rectifies the data."""
+
         # STEP 5: RECTIFICATION ======================================================================================
 
         print("\n" + "Rectifying data...")
@@ -183,6 +204,8 @@ class ActigraphConversion:
         print("Complete.")
 
     def deadband_filter(self):
+        """Applies deadband filter corresponding to < 0.068 G."""
+
         # STEP 6: DEADBAND BELOW 0.068G's ============================================================================
 
         print("\n" + "Applying deadband (< 0.068 G's) filter...")
@@ -196,6 +219,10 @@ class ActigraphConversion:
         print("Complete.")
 
     def convert_to_8bit(self):
+        """-Converts data to the equivalent if it had been collected with 8-bit resolution.
+           -Calculates vector magnitude in a second method.
+        """
+
         # STEP 7: 8-BIT CONVERSION ===================================================================================
 
         print("\n" + "Converting data to 8-bit resolution...")
@@ -232,6 +259,8 @@ class ActigraphConversion:
         print("Complete.")
 
     def epoch_data(self):
+        """Epochs data by taking the sum of a jumping window."""
+
         # STEP 8: EPOCHING ===========================================================================================
 
         print("\n" + "Epoching the data...")
@@ -248,6 +277,7 @@ class ActigraphConversion:
         print("Complete.")
 
     def plot_epoched(self):
+        """Plots epoched data (single-axis and vector magnitude)."""
 
         fig, (ax1) = plt.subplots(1, figsize=(10, 7))
 
@@ -264,6 +294,7 @@ class ActigraphConversion:
         ax1.set_title("{}-second epoched data".format(self.epoch_len))
 
     def plot_steps(self):
+        """Plots data from most of the processing steps."""
 
         fig, axs = plt.subplots(nrows=4, ncols=1, sharex='col', figsize=(10, 7))
         axs[0].set_title("Most Processing Steps")
