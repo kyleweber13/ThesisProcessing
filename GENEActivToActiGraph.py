@@ -295,7 +295,3 @@ class ActigraphConversion:
         axs[3].set_ylabel("Counts")
 
         plt.show()
-
-
-x = import_edf("/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3036_01_GA_RWrist_Accelerometer.EDF")
-ag = ActigraphConversion(raw_data=x, epoch_len=60, start_day=0, end_day=1)
