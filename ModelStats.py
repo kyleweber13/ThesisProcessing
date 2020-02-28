@@ -28,9 +28,21 @@ class Stats:
                       "HR-HRAcc": None}
 
         # Creates data sets excluding Nones
-        wrist = [i for i in self.subject_object.valid.wrist if i is not None]
-        ankle = [i for i in self.subject_object.valid.ankle if i is not None]
-        hr = [i for i in self.subject_object.valid.hr if i is not None]
+        if self.subject_object.wrist_filepath is not None:
+            wrist = [i for i in self.subject_object.valid.wrist if i is not None]
+        if self.subject_object.wrist_filepath is None:
+            wrist = None
+
+        if self.subject_object.ankle_filepath is not None:
+            ankle = [i for i in self.subject_object.valid.ankle if i is not None]
+        if self.subject_object.ankle_filepath is None:
+            ankle = None
+
+        if self.subject_object.ecg_filepath is not None:
+            hr = [i for i in self.subject_object.valid.hr if i is not None]
+        if self.subject_object.ecg_filepath is None:
+            hr = None
+
         # hr_acc = [i for i in self.subject_object.valid.hr_acc if i is not None]
         hr_acc = None
 
