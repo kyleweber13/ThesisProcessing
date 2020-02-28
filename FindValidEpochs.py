@@ -44,6 +44,9 @@ class ValidData:
         self.hracc_totals = None
 
         self.percent_valid = None
+        self.hours_valid = None
+        self.final_epoch_validity = None
+        self.validity_dict = None
 
         # =============================================== RUNS METHODS ================================================
 
@@ -56,7 +59,7 @@ class ValidData:
             self.remove_invalid_hr()
 
         # Removal based on sleep data
-        if self.sleep_validity is not None:
+        if self.subject_object.sleeplog_folder is not None:
             self.remove_invalid_sleep()
 
         self.recalculate_activity_totals()
@@ -65,6 +68,7 @@ class ValidData:
 
         if self.write_results:
             self.write_activity_totals()
+            self.write_validity_report()
 
         if self.plot:
             self.plot_validity_data()
@@ -97,28 +101,32 @@ class ValidData:
                 self.epoch_timestamps = self.subject_object.ecg.epoch_timestamps
 
         # Ankle intensity data
-        self.ankle_intensity = self.subject_object.ankle.model.epoch_intensity if \
-            self.subject_object.ankle.model.epoch_intensity is not None else None
+        if self.subject_object.ankle_filepath is not None:
+            self.ankle_intensity = self.subject_object.ankle.model.epoch_intensity if \
+                self.subject_object.ankle.model.epoch_intensity is not None else None
 
         # Wrist intensity data
-        self.wrist_intensity = self.subject_object.wrist.model.epoch_intensity if \
-            self.subject_object.wrist.model.epoch_intensity is not None else None
+        if self.subject_object.wrist_filepath is not None:
+            self.wrist_intensity = self.subject_object.wrist.model.epoch_intensity if \
+                self.subject_object.wrist.model.epoch_intensity is not None else None
 
         # HR intensity data
-        self.hr_intensity = self.subject_object.ecg.epoch_intensity if \
-            self.subject_object.ecg.epoch_intensity is not None else None
+        if self.subject_object.ecg_filepath is not None:
+            self.hr_intensity = self.subject_object.ecg.epoch_intensity if \
+                self.subject_object.ecg.epoch_intensity is not None else None
 
-        # HR validity status
-        self.hr_validity = self.subject_object.ecg.epoch_validity if \
-            self.subject_object.ecg.epoch_validity is not None else None
+            # HR validity status
+            self.hr_validity = self.subject_object.ecg.epoch_validity if \
+                self.subject_object.ecg.epoch_validity is not None else None
 
         # HR-Acc intensity data
         self.hracc_intensity = self.subject_object.hracc.model.epoch_intensity if \
             self.subject_object.hracc is not None else None  # UPDATE THIS ONCE IT EXISTS
 
         # Sleep validity data
-        self.sleep_validity = self.subject_object.sleep.sleep_status if \
-            self.subject_object.sleep.sleep_status is not None else None
+        if self.subject_object.sleeplog_folder is not None:
+            self.sleep_validity = self.subject_object.sleep.sleep_status if \
+                self.subject_object.sleep.sleep_status is not None else None
 
     def remove_invalid_hr(self):
         """Removes invalid epochs from Ankle and Wrist data based on HR validity."""
@@ -160,7 +168,7 @@ class ValidData:
             self.wrist = [self.wrist_intensity[i] if self.sleep_validity[i] == 0 else None
                           for i in range(self.data_len)]
 
-        # If wrist data available and invalid data was removed
+        # If wrist data available and invalid data was removed using HR
         if self.wrist_intensity is not None and self.wrist is not None:
             self.wrist = [self.wrist[i] if self.sleep_validity[i] == 0 else None for i in range(self.data_len)]
 
@@ -177,13 +185,34 @@ class ValidData:
 
         try:
             self.percent_valid = round(100 * (self.data_len - self.ankle.count(None)) / self.data_len, 1)
-        except TypeError:
+            self.hours_valid = round((len(self.ankle) * self.subject_object.epoch_len / 3600) *
+                                     (self.percent_valid / 100), 2)
+            self.final_epoch_validity = ["Invalid" if i is None else "Valid" for i in self.ankle]
+        except (TypeError, AttributeError):
             try:
                 self.percent_valid = round(100 * (self.data_len - self.wrist.count(None)) / self.data_len, 1)
-            except TypeError:
-                self.percent_valid = round(100 * (self.data_len - self.hr.count(None)) / self.data_len, 1)
+                self.hours_valid = round((len(self.wrist) * self.subject_object.epoch_len / 3600) *
+                                         (self.percent_valid / 100), 2)
+                self.final_epoch_validity = ["Invalid" if i is None else "Valid" for i in self.wrist]
 
-        print("\n" + "Validity check complete. {}% of the original data is valid.".format(self.percent_valid))
+            except (TypeError, AttributeError):
+                self.percent_valid = round(100 * (self.data_len - self.hr.count(None)) / self.data_len, 1)
+                self.hours_valid = round((len(self.hr) * self.subject_object.epoch_len / 3600) *
+                                         (self.percent_valid / 100), 2)
+                self.final_epoch_validity = ["Invalid" if i is None else "Valid" for i in self.hr]
+
+            self.hours_valid = round(self.final_epoch_validity.count("Valid") * self.subject_object.epoch_len / 3600, 2)
+
+            print("\n" + "Validity check complete. {}% of the original "
+                         "data is valid ({} hours).".format(self.percent_valid, self.hours_valid))
+
+        self.validity_dict = {"Valid ECG %": 100 - self.subject_object.ecg.quality_report["Percent invalid"],
+                              "ECG Hours Lost": self.subject_object.ecg.quality_report["Hours lost"],
+                              "Sleep %": self.subject_object.sleep.sleep_report["Sleep%"],
+                              "Sleep Hours Lost": round(self.subject_object.sleep.sleep_report["SleepDuration"] / 60,
+                                                        2),
+                              "Total Valid %": self.percent_valid,
+                              "Total Hours Valid": self.hours_valid}
 
     def plot_validity_data(self):
         """Generates 4 subplots for each activity model with invalid data removed."""
@@ -211,29 +240,29 @@ class ValidData:
                 ax3.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, 4), color='black', alpha=0.35)
                 ax4.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, 4), color='black', alpha=0.35)
 
-            except AttributeError:
+            except (AttributeError, TypeError):
                 pass
 
         if self.ankle_intensity is not None:
-            ax1.plot(self.epoch_timestamps, self.ankle[:self.data_len], color='#606060', label='Ankle')
+            ax1.plot(self.epoch_timestamps[:self.data_len], self.ankle[:self.data_len], color='#606060', label='Ankle')
             ax1.set_ylim(-0.1, 3)
             ax1.legend(loc='upper left')
             ax1.set_ylabel("Intensity Cat.")
 
         if self.wrist_intensity is not None:
-            ax2.plot(self.epoch_timestamps, self.wrist[:self.data_len], color='#606060', label='Wrist')
+            ax2.plot(self.epoch_timestamps[:self.data_len], self.wrist[:self.data_len], color='#606060', label='Wrist')
             ax2.set_ylim(-0.1, 3)
             ax2.legend(loc='upper left')
             ax2.set_ylabel("Intensity Cat.")
 
         if self.hr_intensity is not None:
-            ax3.plot(self.epoch_timestamps, self.hr[:self.data_len], color='red', label='HR')
+            ax3.plot(self.epoch_timestamps[:self.data_len], self.hr[:self.data_len], color='red', label='HR')
             ax3.set_ylim(-0.1, 3)
             ax3.legend(loc='upper left')
             ax3.set_ylabel("Intensity Cat.")
 
         if self.hracc_intensity is not None:
-            ax4.plot(self.epoch_timestamps, self.hr_acc[:self.data_len], color='black', label='HR-Acc')
+            ax4.plot(self.epoch_timestamps[:self.data_len], self.hr_acc[:self.data_len], color='black', label='HR-Acc')
             ax4.set_ylim(-0.1, 3)
             ax4.legend(loc='upper left')
             ax4.set_ylabel("Intensity Cat.")
@@ -248,7 +277,6 @@ class ValidData:
 
         # ANKLE -------------------------------------------------------------------------------------------------------
         if self.ankle is not None:
-
             epoch_to_minutes = 60 / self.subject_object.ankle.epoch_len
 
             n_valid_epochs = len(self.ankle) - self.ankle.count(None)
@@ -265,7 +293,6 @@ class ValidData:
 
         # WRIST -------------------------------------------------------------------------------------------------------
         if self.wrist is not None:
-
             epoch_to_minutes = 60 / self.subject_object.wrist.epoch_len
 
             n_valid_epochs = len(self.wrist) - self.wrist.count(None)
@@ -282,7 +309,6 @@ class ValidData:
 
         # HEART RATE --------------------------------------------------------------------------------------------------
         if self.hr is not None:
-
             epoch_to_minutes = 60 / self.subject_object.ecg.epoch_len
 
             n_valid_epochs = len(self.hr) - self.hr.count(None)
@@ -299,7 +325,6 @@ class ValidData:
 
         # HR-ACC ------------------------------------------------------------------------------------------------------
         if self.hr_acc is not None:
-
             epoch_to_minutes = 60 / self.subject_object.hracc.epoch_len
 
             n_valid_epochs = len(self.hr_acc) - self.hr_acc.count(None)
@@ -325,12 +350,42 @@ class ValidData:
             writer = csv.DictWriter(outfile, fieldnames=fieldnames)
 
             writer.writeheader()
-            writer.writerow(self.ankle_totals)
-            writer.writerow(self.wrist_totals)
-            writer.writerow(self.hr_totals)
+            if self.subject_object.ankle is not None:
+                writer.writerow(self.ankle_totals)
+            if self.subject_object.wrist is not None:
+                writer.writerow(self.wrist_totals)
+            if self.subject_object.ecg is not None:
+                writer.writerow(self.hr_totals)
             # writer.writerow(self.hracc_totals)
 
             print()
             print("Saved activity profiles from valid data to file "
                   "{}Model Output/OND07_WTL_{}_01_Valid_Activity_Totals.csv".format(self.subject_object.output_dir,
                                                                                     self.subject_object.subjectID))
+
+    def write_valid_epochs(self):
+        with open("{}Model Output/OND07_WTL_{}_01_Valid_EpochIntensityData.csv".format(self.subject_object.output_dir,
+                                                                                       self.subject_object.subjectID),
+                  'w', newline='') as outfile:
+
+            writer = csv.writer(outfile, delimiter=",", lineterminator="\n")
+
+            writer.writerow(["Timestamp", "Validity", "Wrist", "Ankle", "HR"])
+            writer.writerows(zip(self.epoch_timestamps, self.final_epoch_validity,
+                                 self.wrist_intensity, self.ankle_intensity, self.hr_intensity))
+
+    def write_validity_report(self):
+
+        with open("/Users/kyleweber/Desktop/QC Data/" + self.subject_object.subjectID +
+                  "_ValidityData.csv", "w") as outfile:
+            fieldnames = ['Valid ECG %', 'ECG Hours Lost',
+                          'Sleep %', 'Sleep Hours Lost',
+                          'Total Valid %', "Total Hours Valid"]
+
+            writer = csv.DictWriter(outfile, fieldnames=fieldnames)
+
+            writer.writeheader()
+            writer.writerow(self.validity_dict)
+
+        print("\n" + "Saved validity summary data to file /Users/kyleweber/Desktop/QC Data/" +
+              self.subject_object.subjectID + "_ValidityData.csv")
