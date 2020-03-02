@@ -137,7 +137,7 @@ class SleepLog:
            overnight sleep coded as 2"""
 
         # Creates list of 0s corresponding to each epoch
-        epoch_list = np.zeros(self.data_len)
+        epoch_list = np.zeros(self.data_len + 1)
 
         for i, epoch_stamp in enumerate(self.epoch_timestamps):
             try:
@@ -237,18 +237,17 @@ class SleepLog:
                         if index == 2:
                             ax1.axvline(x=value, color="red", label="Wake up from nap")
 
-            # Fills in region where participant was asleep
-            for day1, day2 in zip(self.sleep_data[:], self.sleep_data[1:]):
-                try:
-                    # Overnight --> green
-                    ax1.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, max(self.wrist_svm)),
-                                      color='green', alpha=0.35)
+                # Fills in region where participant was asleep
+                for day1, day2 in zip(self.sleep_data[:], self.sleep_data[1:]):
+                    if day1[3] != "N/A" and day2[0] != "N/A":
+                        # Overnight --> green
+                        ax1.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, max(self.wrist_svm)),
+                                          color='green', alpha=0.35)
 
-                    # Naps --> red
-                    ax1.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, max(self.wrist_svm)),
-                                      color='red', alpha=0.35)
-                except AttributeError:
-                    pass
+                    if day1[2] != "N/A" and day1[1] != "N/A":
+                        # Naps --> red
+                        ax1.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, max(self.wrist_svm)),
+                                          color='red', alpha=0.35)
 
         except (AttributeError, TypeError):
             pass
@@ -277,17 +276,15 @@ class SleepLog:
 
             # Fills in region where participant was asleep
             for day1, day2 in zip(self.sleep_data[:], self.sleep_data[1:]):
-                try:
+                if day1[3] != "N/A" and day2[0] != "N/A":
                     # Overnight --> green
                     ax2.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, max(self.ankle_svm)),
                                       color='green', alpha=0.35)
 
+                if day1[2] != "N/A" and day1[1] != "N/A":
                     # Naps --> red
                     ax2.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, max(self.ankle_svm)),
                                       color='red', alpha=0.35)
-
-                except AttributeError:
-                    pass
 
         except (AttributeError, TypeError):
             pass
@@ -317,18 +314,18 @@ class SleepLog:
 
             # Fills in region where participant was asleep
             for day1, day2 in zip(self.sleep_data[:], self.sleep_data[1:]):
-                try:
+                if day1[3] != "N/A" and day2[0] != "N/A":
                     # Overnight --> green
                     ax3.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(min([i for i in self.hr if i is not None]),
                                                                           max([i for i in self.hr if i is not None])),
                                       color='green', alpha=0.35)
 
+                if day1[2] != "N/A" and day1[1] != "N/A":
+
                     # Naps --> red
                     ax3.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(min([i for i in self.hr if i is not None]),
                                                                           max([i for i in self.hr if i is not None])),
                                       color='red', alpha=0.35)
-                except AttributeError:
-                    pass
 
         except (AttributeError, TypeError, ValueError):
             pass
