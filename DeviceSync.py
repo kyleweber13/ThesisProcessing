@@ -21,11 +21,6 @@ def crop_start(subject_object):
 
         return start_crop_dict
 
-    print()
-    print("======================================= DEVICE SYNCHRONIZATION ======================================")
-
-    print("\n" + "Performing device sync...")
-
     # Booleans for whether data exists or not
     ankle_exists = subject_object.ankle_filepath is not None
     wrist_exists = subject_object.wrist_filepath is not None
@@ -69,27 +64,43 @@ def crop_start(subject_object):
 
         # If already synced at start
         if ankle_start == wrist_start == ecg_start:
+
             print("-Devices synced at start.")
             ankle_start_offset, wrist_start_offset, ecg_start_offset = 0, 0, 0
 
         # Wrist first
         if ankle_start <= wrist_start and ecg_start <= wrist_start:
-            ecg_start_offset = (wrist_start - ecg_start).seconds * ecg_samplerate
-            ankle_start_offset = (wrist_start - ankle_start).seconds * ankle_samplerate
+
+            ecg_start_offset = ((wrist_start - ecg_start).days * 86400 +
+                                (wrist_start - ecg_start).seconds) * ecg_samplerate
+
+            ankle_start_offset = ((wrist_start - ankle_start).days * 86400 +
+                                  (wrist_start - ankle_start).seconds) * ankle_samplerate
+
             print("-Wrist started first." + "\n" + "-Ankle offset = {}; ECG offset = {}.".format(ankle_start_offset,
                                                                                                  ecg_start_offset))
 
         # Ankle first
         if wrist_start <= ankle_start and ecg_start <= ankle_start:
-            ecg_start_offset = (ankle_start - ecg_start).seconds * ecg_samplerate
-            wrist_start_offset = (ankle_start - wrist_start).seconds * wrist_samplerate
+
+            ecg_start_offset = ((ankle_start - ecg_start).days * 86400 +
+                                (ankle_start - ecg_start).seconds) * ecg_samplerate
+
+            wrist_start_offset = ((ankle_start - wrist_start).days * 86400 +
+                                  (ankle_start - wrist_start).seconds) * wrist_samplerate
+
             print("-Ankle started first." + "\n" + "-Wrist offset = {}; ECG offset = {}.".format(wrist_start_offset,
                                                                                                  ecg_start_offset))
 
         # ECG first
         if wrist_start <= ecg_start and ankle_start <= ecg_start:
-            wrist_start_offset = (ecg_start - wrist_start).seconds * wrist_samplerate
-            ankle_start_offset = (ecg_start - ankle_start).seconds * ankle_samplerate
+
+            wrist_start_offset = ((ecg_start - wrist_start).days * 86400 +
+                                  (ecg_start - wrist_start).seconds) * wrist_samplerate
+
+            ankle_start_offset = ((ecg_start - ankle_start).days * 86400 +
+                                  (ecg_start - ankle_start).seconds) * ankle_samplerate
+
             print("-ECG started first." + "\n" + "-Wrist offset = {}; ankle offset = {}.".format(wrist_start_offset,
                                                                                                  ankle_start_offset))
 
@@ -100,13 +111,15 @@ def crop_start(subject_object):
         if ankle_start < wrist_start:
             print("-Ankle started before wrist.")
 
-            ankle_start_offset = (wrist_start - ankle_start).seconds * ankle_samplerate
+            ankle_start_offset = ((wrist_start - ankle_start).days * 86400 +
+                                  (wrist_start - ankle_start).seconds) * ankle_samplerate
 
         # If wrist started first
         if wrist_start < ankle_start:
             print("-Wrist started before ankle.")
 
-            wrist_start_offset = (ankle_start - wrist_start).seconds * wrist_samplerate
+            wrist_start_offset = ((ankle_start - wrist_start).days * 86400 +
+                                  (ankle_start - wrist_start).seconds) * wrist_samplerate
 
     # IF ONLY ECG AND ANKLE ARE USED =================================================================================
     if ankle_exists and ecg_exists and not wrist_exists:
@@ -115,13 +128,15 @@ def crop_start(subject_object):
         if ankle_start < ecg_start:
             print("-Ankle started before ECG.")
 
-            ankle_start_offset = (ecg_start - ankle_start).seconds * ankle_samplerate
+            ankle_start_offset = ((ecg_start - ankle_start).days * 86400 +
+                                  (ecg_start - ankle_start).seconds) * ankle_samplerate
 
         # If ECG started first
         if ecg_start < ankle_start:
             print("-ECG started before ankle.")
 
-            ecg_start_offset = (ankle_start - ecg_start).seconds * ecg_samplerate
+            ecg_start_offset = ((ankle_start - ecg_start).days * 86400 +
+                                (ankle_start - ecg_start).seconds) * ecg_samplerate
 
     # IF ONLY ECG AND WRIST ARE USED =================================================================================
     if wrist_exists and ecg_exists and not ankle_exists:
@@ -130,13 +145,15 @@ def crop_start(subject_object):
         if wrist_start < ecg_start:
             print("-Wrist started before ECG.")
 
-            wrist_start_offset = (ecg_start - wrist_start).seconds * wrist_samplerate
+            wrist_start_offset = ((ecg_start - wrist_start).days * 86400 +
+                                  (ecg_start - wrist_start).seconds) * wrist_samplerate
 
         # If ECG started first
         if ecg_start < wrist_start:
             print("-ECG started before wrist.")
 
-            ecg_start_offset = (wrist_start - ecg_start).seconds * ecg_samplerate
+            ecg_start_offset = ((wrist_start - ecg_start).days * 86400 +
+                                (wrist_start - ecg_start).seconds) * ecg_samplerate
 
     start_crop_dict = {"Ankle": ankle_start_offset,
                        "Wrist": wrist_start_offset,
@@ -224,22 +241,32 @@ def crop_end(subject_object):
 
         # Wrist ends first
         if ankle_end >= wrist_end and ecg_end >= wrist_end:
-            ankle_end_offset = (ankle_end - wrist_end).seconds * ankle_samplerate
-            ecg_end_offset = (ecg_end - wrist_end).seconds * ecg_samplerate
+            ankle_end_offset = ((ankle_end - wrist_end).days * 86400 +
+                                (ankle_end - wrist_end).seconds) * ankle_samplerate
+
+            ecg_end_offset = ((ecg_end - wrist_end).days * 86400 + (ecg_end - wrist_end).seconds) * ecg_samplerate
+
             print("-Wrist ended first." + "\n" + "-Ankle offset = {}, ECG offset = {}.".format(ankle_end_offset,
                                                                                                ecg_end_offset))
 
         # Ankle ends first
         if wrist_end >= ankle_end and ecg_end >= ankle_end:
-            ecg_end_offset = (ecg_end - ankle_end).seconds * ecg_samplerate
-            wrist_end_offset = (wrist_end - ankle_end).seconds * wrist_samplerate
+
+            ecg_end_offset = ((ecg_end - ankle_end).days * 86400 + (ecg_end - ankle_end).seconds) * ecg_samplerate
+
+            wrist_end_offset = ((wrist_end - ankle_end).days * 86400 +
+                                (wrist_end - ankle_end).seconds) * wrist_samplerate
+
             print("-Ankle ended first." + "\n" + "-Wrist offset = {}; ECG offset = {}.".format(wrist_end_offset,
                                                                                                ecg_end_offset))
 
         # ECG ends first
         if wrist_end >= ecg_end and ankle_end >= ecg_end:
-            wrist_end_offset = (wrist_end - ecg_end).seconds * wrist_samplerate
-            ankle_end_offset = (ankle_end - ecg_end).seconds * ankle_samplerate
+
+            wrist_end_offset = ((wrist_end - ecg_end).days * 86400 + (wrist_end - ecg_end).seconds) * wrist_samplerate
+
+            ankle_end_offset = ((ankle_end - ecg_end).days * 86400 + (ankle_end - ecg_end).seconds) * ankle_samplerate
+
             print("-ECG ended first." + "\n" + "-Wrist offset = {}; ankle offset = {}.".format(wrist_end_offset,
                                                                                                ankle_end_offset))
 
@@ -253,12 +280,18 @@ def crop_end(subject_object):
 
         # Wrist ends first
         if ankle_end >= wrist_end:
-            ankle_end_offset = (ankle_end - wrist_end).seconds * ankle_samplerate
+
+            ankle_end_offset = ((ankle_end - wrist_end).days * 86400 +
+                                (ankle_end - wrist_end).seconds) * ankle_samplerate
+
             print("-Wrist ended first." + "\n" + "-Ankle offset = {}".format(ankle_end_offset))
 
         # Ankle ends first
         if wrist_end >= ankle_end:
-            wrist_end_offset = (wrist_end - ankle_end).seconds * wrist_samplerate
+
+            wrist_end_offset = ((wrist_end - ankle_end).days * 86400 +
+                                (wrist_end - ankle_end).seconds) * wrist_samplerate
+
             print("-Ankle ended first." + "\n" + "-Wrist offset = {}; ECG offset = {}.".format(wrist_end_offset,
                                                                                                ecg_end_offset))
 
@@ -272,12 +305,16 @@ def crop_end(subject_object):
 
         # ECG ends first
         if ankle_end >= ecg_end:
-            ankle_end_offset = (ankle_end - ecg_end).seconds * ankle_samplerate
+
+            ankle_end_offset = ((ankle_end - ecg_end).days * 86400 + (ankle_end - ecg_end).seconds) * ankle_samplerate
+
             print("-ECG ended first." + "\n" + "-Ankle offset = {}.".format(ankle_end_offset))
 
         # Ankle ends first
         if ecg_end >= ankle_end:
-            ecg_end_offset = (ecg_end - ankle_end).seconds * ecg_samplerate
+
+            ecg_end_offset = ((ecg_end - ankle_end).days * 86400 + (ecg_end - ankle_end).seconds) * ecg_samplerate
+
             print("-Ankle ended first." + "\n" + "-ECG offset = {}.".format(ecg_end_offset))
 
     # IF WRIST AND ECG USED ===========================================================================================
@@ -290,12 +327,16 @@ def crop_end(subject_object):
 
         # ECG ends first
         if wrist_end >= ecg_end:
-            wrist_end_offset = (wrist_end - wrist_end).seconds * wrist_samplerate
+
+            wrist_end_offset = ((wrist_end - ecg_end).days * 86400 + (wrist_end - ecg_end).seconds) * wrist_samplerate
+
             print("-ECG ended first." + "\n" + "-Wrist offset = {}.".format(wrist_end_offset))
 
         # Wrist ends first
         if ecg_end >= wrist_end:
-            ecg_end_offset = (ecg_end - wrist_end).seconds * ecg_samplerate
+
+            ecg_end_offset = ((ecg_end - wrist_end).days * 86400 + (ecg_end - wrist_end).seconds) * ecg_samplerate
+
             print("-Wrist ended first." + "\n" + "-ECG offset = {}.".format(ecg_end_offset))
 
     end_crop_dict = {"Ankle": ankle_duration * ankle_samplerate - ankle_end_offset,
@@ -307,27 +348,3 @@ def crop_end(subject_object):
                                                                       ecg_end_offset))
 
     return end_crop_dict
-
-
-def load_file(ecg_filepath):
-    wd = "/Volumes/nimbal$/Data/OND07/Raw data/Bittium/"
-
-    ecg_file = pyedflib.EdfReader(wd + ecg_filepath)
-    ecg_duration = ecg_file.getFileDuration()
-    print("=======================================================")
-    print(ecg_filepath)
-    print("Duration: {} hours".format(round(ecg_duration/3600, 2)))
-
-
-"""
-import os
-files = sorted(os.listdir("/Volumes/nimbal$/Data/OND07/Raw data/Bittium/"))
-
-for file in files:
-    if ".EDF" not in file and file != ".DS_Store":
-
-        all_files = os.listdir("/Volumes/nimbal$/Data/OND07/Raw data/Bittium/" + file)
-
-        for new_files in all_files:
-            load_file("/Volumes/nimbal$/Data/OND07/Raw data/Bittium/" + file + "/" + new_files)
-"""
