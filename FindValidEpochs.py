@@ -2,6 +2,8 @@ from matplotlib import pyplot as plt
 import matplotlib.dates as mdates
 import numpy as np
 import csv
+import statistics as stats
+import scipy.stats
 
 
 class ValidData:
@@ -48,6 +50,8 @@ class ValidData:
         self.final_epoch_validity = None
         self.validity_dict = None
 
+        self.hr_validity_counts = None
+
         # =============================================== RUNS METHODS ================================================
 
         # Organizing data depending on what data are available
@@ -66,9 +70,12 @@ class ValidData:
 
         self.generate_validity_report()
 
+        self.check_ecgvalidity_activitylevel()
+
         if self.write_results:
             self.write_activity_totals()
             self.write_validity_report()
+            self.write_valid_epochs()
 
         if self.plot:
             self.plot_validity_data()
@@ -101,9 +108,14 @@ class ValidData:
                 self.epoch_timestamps = self.subject_object.ecg.epoch_timestamps
 
         # Ankle intensity data
-        if self.subject_object.ankle_filepath is not None:
-            self.ankle_intensity = self.subject_object.ankle.model.epoch_intensity if \
-                self.subject_object.ankle.model.epoch_intensity is not None else None
+        try:
+            if self.subject_object.ankle_filepath is not None:
+                self.ankle_intensity = self.subject_object.ankle.model.epoch_intensity if \
+                    self.subject_object.ankle.model.epoch_intensity is not None else None
+
+        # Error handling if ankle model not run (no treadmill protocol?)
+        except AttributeError:
+            self.ankle_intensity = None
 
         # Wrist intensity data
         if self.subject_object.wrist_filepath is not None:
@@ -213,6 +225,65 @@ class ValidData:
                                                         2),
                               "Total Valid %": self.percent_valid,
                               "Total Hours Valid": self.hours_valid}
+
+    def check_ecgvalidity_activitylevel(self):
+
+        print("\n" + "Checking accelerometer data to determine if invalid "
+                     "ECG periods were during more/less movement...")
+
+        self.hr_validity_counts = {"Wrist valid": None, "Wrist invalid": None,
+                                   "Ankle valid": None, "Ankle invalid": None}
+
+        if self.subject_object.wrist_filepath is not None:
+
+            wrist_valid_data = [self.subject_object.wrist.epoch.svm[i]
+                                for i in range(0, len(self.subject_object.wrist.epoch.svm))
+                                if self.hr_validity[i] == 0]
+            wrist_invalid_data = [self.subject_object.wrist.epoch.svm[i]
+                                  for i in range(0, len(self.subject_object.wrist.epoch.svm))
+                                  if self.hr_validity[i] == 1]
+
+            self.hr_validity_counts["Wrist valid"] = round(stats.mean(wrist_valid_data), 1)
+            self.hr_validity_counts["Wrist invalid"] = round(stats.mean(wrist_invalid_data), 1)
+
+            ttest_result = scipy.stats.ttest_ind(wrist_valid_data, wrist_invalid_data)
+
+            ttest_t = round(ttest_result[0], 2)
+            ttest_p = round(ttest_result[1], 3)
+
+            if ttest_p < .05:
+                print("-Wrist activity may have had a statistically significant effect on ECG validity:")
+            if ttest_p >= .05:
+                print("-Wrist activity does not appear to have had a statistically significant effect on ECG validity:")
+
+            print("    - Valid counts = {}; invalid counts = {} "
+                  "(t = {}, p ~ {})".format(self.hr_validity_counts["Wrist valid"],
+                                            self.hr_validity_counts["Wrist invalid"], ttest_t, ttest_p))
+
+        if self.subject_object.ankle_filepath is not None:
+            ankle_valid_data = [self.subject_object.ankle.epoch.svm[i]
+                                for i in range(0, len(self.subject_object.ankle.epoch.svm))
+                                if self.hr_validity[i] == 0]
+            ankle_invalid_data = [self.subject_object.ankle.epoch.svm[i]
+                                  for i in range(0, len(self.subject_object.ankle.epoch.svm))
+                                  if self.hr_validity[i] == 1]
+
+            self.hr_validity_counts["Ankle valid"] = round(stats.mean(ankle_valid_data), 1)
+            self.hr_validity_counts["Ankle invalid"] = round(stats.mean(ankle_invalid_data), 1)
+
+            ttest_result = scipy.stats.ttest_ind(ankle_valid_data, ankle_valid_data)
+
+            ttest_t = round(ttest_result[0], 2)
+            ttest_p = round(ttest_result[1], 3)
+
+            if ttest_p < .05:
+                print("-Ankle activity may have had a statistically significant effect on ECG validity:")
+            if ttest_p >= .05:
+                print("-Ankle activity does not appear to have had a statistically significant effect on ECG validity:")
+
+            print("    - Valid counts = {}; invalid counts = {} "
+                  "(t = {}, p ~ {})".format(self.hr_validity_counts["Ankle valid"],
+                                            self.hr_validity_counts["Ankle invalid"], ttest_t, ttest_p))
 
     def plot_validity_data(self):
         """Generates 4 subplots for each activity model with invalid data removed."""
@@ -364,6 +435,7 @@ class ValidData:
                                                                                     self.subject_object.subjectID))
 
     def write_valid_epochs(self):
+
         with open("{}Model Output/OND07_WTL_{}_01_Valid_EpochIntensityData.csv".format(self.subject_object.output_dir,
                                                                                        self.subject_object.subjectID),
                   'w', newline='') as outfile:
@@ -371,8 +443,29 @@ class ValidData:
             writer = csv.writer(outfile, delimiter=",", lineterminator="\n")
 
             writer.writerow(["Timestamp", "Validity", "Wrist", "Ankle", "HR"])
+
+            # Prevents TypeError during writing to .csv if object is None
+            if self.wrist_intensity is None:
+                wrist_intensity = [None for i in range(len(self.epoch_timestamps))]
+            if self.wrist_intensity is not None:
+                wrist_intensity = self.wrist
+
+            if self.ankle_intensity is None:
+                ankle_intensity = [None for i in range(len(self.epoch_timestamps))]
+            if self.ankle_intensity is not None:
+                ankle_intensity = self.ankle
+
+            if self.hr_intensity is None:
+                hr_intensity = [None for i in range(len(self.epoch_timestamps))]
+            if self.hr_intensity is not None:
+                hr_intensity = self.hr
+
             writer.writerows(zip(self.epoch_timestamps, self.final_epoch_validity,
-                                 self.wrist_intensity, self.ankle_intensity, self.hr_intensity))
+                                 wrist_intensity, ankle_intensity, hr_intensity))
+
+        print("\n" + "Saved epoch-by-epoch intensity data to file "
+                     "{}Model Output/OND07_WTL_{}_01_Valid_EpochIntensityData.csv"
+              .format(self.subject_object.output_dir, self.subject_object.subjectID))
 
     def write_validity_report(self):
 
