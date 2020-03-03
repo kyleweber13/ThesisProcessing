@@ -206,16 +206,18 @@ class Bittium:
         print("\n" + "Import complete ({} seconds).".format(round(proc_time, 2)))
 
 
-def check_file(ecg_filepath):
+def check_file(filepath):
     """Calculates file duration with start and end times. Prints results to console."""
 
-    ecg_file = pyedflib.EdfReader(ecg_filepath)
+    ecg_file = pyedflib.EdfReader(filepath)
     ecg_duration = ecg_file.getFileDuration()
     start_time = ecg_file.getStartdatetime()
     end_time = start_time + timedelta(seconds=ecg_file.getFileDuration())
 
     print("=======================================================")
-    print(ecg_filepath)
+    print(filepath)
     print("Start time: ", start_time)
     print("End time:", end_time)
     print("Duration: {} hours".format(round(ecg_duration/3600, 2)))
+
+    return start_time, end_time
