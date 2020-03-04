@@ -6,13 +6,13 @@ import SleepLog
 import NonWearLog
 import ModelStats
 import FindValidEpochs
+import ImportCropIndexes
+import ImportEDF
 
 import os
-import csv
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import datetime
-import numpy as np
 import warnings
 from pandas.plotting import register_matplotlib_converters
 register_matplotlib_converters()
@@ -30,9 +30,9 @@ class Subject:
                  load_raw_ecg=False, load_raw_ankle=False, load_raw_wrist=False,
                  epoch_len=15, remove_epoch_baseline=False,
                  rest_hr_window=60, n_epochs_rest_hr=10,
-                 filter_ecg=False, plot_data=False,
+                 crop_index_file=None, filter_ecg=False, plot_data=False,
                  from_processed=True, output_dir=None,
-                 write_results=False, treadmill_processed=False, treadmill_log_file=None,
+                 write_results=False, treadmill_log_file=None,
                  demographics_file=None, sleeplog_folder=None):
 
         processing_start = datetime.now()
@@ -44,6 +44,7 @@ class Subject:
 
         self.subjectID = subjectID
         self.raw_edf_folder = raw_edf_folder
+        self.crop_index_file = crop_index_file
         self.load_wrist = load_wrist
         self.load_ankle = load_ankle
         self.load_ecg = load_ecg
@@ -80,18 +81,25 @@ class Subject:
         self.processed_folder = self.output_dir + "Model Output/"
 
         self.write_results = write_results
-        self.treadmill_processed = treadmill_processed
 
         self.treadmill_log_file = treadmill_log_file
         self.sleeplog_folder = sleeplog_folder
 
-        if not self.from_processed:
-            self.start_offset_dict = DeviceSync.crop_start(subject_object=self)
-            self.end_offset_dict = DeviceSync.crop_end(subject_object=self)
-        if self.from_processed:
-            self.start_offset_dict = {"Ankle": 0, "Wrist": 0, "ECG": 0}
-            self.end_offset_dict = {"Ankle": 0, "Wrist": 0, "ECG": 0}
+        # FILE CROPPING ----------------------------------------------------------------------------------------------
+        # Looks for previously-determined crop indexes
+        self.start_offset_dict, self.end_offset_dict, self.crop_indexes_found = \
+            ImportCropIndexes.import_crop_indexes(subject=self.subjectID, crop_file=self.crop_index_file)
 
+        # If no existing crop indexes exist...
+        if not self.crop_indexes_found:
+            if not self.from_processed:
+                self.start_offset_dict = DeviceSync.crop_start(subject_object=self)
+                self.end_offset_dict = DeviceSync.crop_end(subject_object=self)
+            if self.from_processed:
+                self.start_offset_dict = {"Ankle": 0, "Wrist": 0, "ECG": 0}
+                self.end_offset_dict = {"Ankle": 0, "Wrist": 0, "ECG": 0}
+
+        # DATA IMPORT ------------------------------------------------------------------------------------------------
         if self.ecg_filepath is not None:
             self.ecg = ECG.ECG(filepath=self.ecg_filepath,
                                from_processed=self.from_processed, load_raw=self.load_raw_ecg,
@@ -116,17 +124,21 @@ class Subject:
                                              output_dir=self.output_dir,
                                              remove_baseline=self.remove_epoch_baseline,
                                              processed_folder=self.processed_folder, from_processed=self.from_processed,
-                                             treadmill_processed=True, treadmill_log_file=self.treadmill_log_file,
+                                             treadmill_log_file=self.treadmill_log_file,
                                              write_results=self.write_results,
                                              start_offset=self.start_offset_dict["Ankle"],
                                              end_offset=self.end_offset_dict["Ankle"],
                                              age=self.demographics["Age"], rvo2=self.demographics["RestVO2"],
                                              ecg_object=self.ecg)
 
-        # Sleep data
-        self.sleep = SleepLog.SleepLog(subject_object=self,
-                                       sleeplog_file=self.sleeplog_folder)
+        if self.ankle_filepath is None and self.wrist_filepath is None and self.ecg_filepath is None:
+            print("No files were imported.")
+            quit()
 
+        # Sleep data -------------------------------------------------------------------------------------------------
+        self.sleep = SleepLog.SleepLog(subject_object=self, sleeplog_file=self.sleeplog_folder)
+
+        # UPDATING ECG DATA ------------------------------------------------------------------------------------------
         # Adds data to self.ecg since it relies on self.sleep to be complete
         if self.load_ecg:
             print()
@@ -140,11 +152,11 @@ class Subject:
             self.ecg.perc_hrr = self.ecg.calculate_percent_hrr()
             self.ecg.epoch_intensity, self.ecg.intensity_totals = self.ecg.calculate_intensity()
 
-        # Processing that is only run if more than one device is loaded
+        # Processing that is only run if more than one device is loaded ----------------------------------------------
         if self.load_wrist + self.load_ecg + self.load_ankle > 1:
 
             # Creates subsets of data where only epochs where all data was valid are included
-            self.valid = FindValidEpochs.ValidData(subject_object=self)
+            self.valid = FindValidEpochs.ValidData(subject_object=self, write_results=self.write_results)
 
             # Runs statistical analysis
             self.stats = ModelStats.Stats(subject_object=self)
@@ -176,6 +188,9 @@ class Subject:
                 wrist_filename = [i for i in wrist_filenames if dom_hand + "Wrist" not in i][0]
             if len(wrist_filenames) == 1:
                 wrist_filename = wrist_filenames[0]
+            if len(wrist_filenames) == 0:
+                print("Could not find the correct wrist accelerometer file.")
+                wrist_filename = None
 
         if self.load_ankle:
             ankle_filenames = [self.raw_edf_folder + i for i in subject_file_list if "Ankle" in i]
@@ -184,9 +199,15 @@ class Subject:
                 ankle_filename = [i for i in ankle_filenames if dom_hand + "Ankle" not in i][0]
             if len(ankle_filenames) == 1:
                 ankle_filename = ankle_filenames[0]
+            if len(ankle_filenames) == 0:
+                print("Could not find the correct ankle accelerometer file.")
+                ankle_filename = None
 
         if self.load_ecg:
             ecg_filename = [self.raw_edf_folder + i for i in subject_file_list if "BF" in i][0]
+            if len([self.raw_edf_folder + i for i in subject_file_list if "BF" in i]) == 0:
+                print("Could not find the correct ECG file.")
+                ecg_filename = None
 
         return wrist_filename, ankle_filename, ecg_filename
 
@@ -205,7 +226,7 @@ class Subject:
         try:
             ax1.plot(self.wrist.epoch.timestamps[0:len(self.wrist.epoch.svm)],
                      self.wrist.epoch.svm[0:len(self.wrist.epoch.timestamps)], color='#606060', label="Wrist Acc.")
-            ax1.axhline(y=0, color='black', linewidth=1)
+            ax1.axhline(y=0, color='red', linewidth=1, linestyle='dashed')
             ax1.legend(loc='upper left')
             ax1.set_ylabel("Counts")
         except AttributeError:
@@ -215,7 +236,7 @@ class Subject:
         try:
             ax2.plot(self.ankle.epoch.timestamps[0:len(self.ankle.epoch.svm)],
                      self.ankle.epoch.svm[0:len(self.ankle.epoch.svm)], color='#606060', label="Ankle Acc.")
-            ax2.axhline(y=0, color='black', linewidth=1)
+            ax2.axhline(y=0, color='red', linewidth=1, linestyle='dashed')
             ax2.legend(loc='upper left')
             ax2.set_ylabel("Counts")
         except AttributeError:
@@ -304,44 +325,3 @@ class Subject:
         print("Vigorous:  wrist = {} minutes, ankle = {} minutes, "
               "HR = {} minutes, HR-Acc = {} minutes.".format(vigorous_minutes[0], vigorous_minutes[1],
                                                              vigorous_minutes[2], vigorous_minutes[3]))
-
-
-x = Subject(raw_edf_folder="/Users/kyleweber/Desktop/Data/OND07/EDF/",
-            subjectID=3036,
-            load_ecg=False, load_ankle=False, load_wrist=True,
-            load_raw_ecg=False, load_raw_ankle=False, load_raw_wrist=True,
-            from_processed=False,
-
-            treadmill_processed=True,
-
-            rest_hr_window=30,
-            n_epochs_rest_hr=30,
-            filter_ecg=True,
-            epoch_len=5,
-
-            treadmill_log_file="/Users/kyleweber/Desktop/Data/OND07/Treadmill_Log.csv",
-            demographics_file="/Users/kyleweber/Desktop/Data/OND07/Participant Information/Demographics_Data.csv",
-            # sleeplog_folder="/Users/kyleweber/Desktop/Data/OND07/Sleep Logs/",
-            output_dir="/Users/kyleweber/Desktop/Data/OND07/Processed Data/",
-
-            write_results=False,
-            plot_data=False)
-
-
-"""output_dict = {"Valid ECG %": 100 - x.ecg.quality_report["Percent invalid"],
-               "ECG Hours Lost": x.ecg.quality_report["Hours lost"],
-               "Sleep %": x.sleep.sleep_report["Sleep%"],
-               "Sleep Hours Lost": x.sleep.sleep_report["SleepDuration"]/60,
-               "Total Valid %": x.valid.percent_valid}
-
-with open("/Users/kyleweber/Desktop/QC Data/" + x.subjectID + "_ValidityData.csv", "w") as outfile:
-
-    fieldnames = ['Valid ECG %', 'ECG Hours Lost', 'Sleep %', 'Sleep Hours Lost', 'Total Valid %']
-    writer = csv.DictWriter(outfile, fieldnames=fieldnames)
-
-    writer.writeheader()
-    writer.writerow(output_dict)"""
-
-
-"""print("PERCENT VALID: ", 100 - x.ecg.quality_report["Percent invalid"])
-x.ecg.plot_random_qc()"""
