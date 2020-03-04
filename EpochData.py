@@ -49,6 +49,14 @@ class EpochAccel:
                 break
 
             vm_sum = sum(raw_data.vm[i:i + self.epoch_len * raw_data.sample_rate])
+
+            # Bug handling: when we combine multiple EDF files they are zero-padded
+            # When vector magnitude is calculated, it is 1
+            # Any epoch where the values were all the epoch length * sampling rate (i.e. a VM of 1 for each data point)
+            # becomes 0
+            if vm_sum == self.epoch_len * raw_data.sample_rate:
+                vm_sum = 0
+
             self.svm.append(round(vm_sum, 5))
 
         print("Epoching complete.")
