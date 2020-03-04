@@ -7,7 +7,7 @@ def import_crop_indexes(subject, crop_file):
     print()
     print("======================================= DEVICE SYNCHRONIZATION ======================================")
 
-    print("\n" + "Searching {} for existing file crop indexes...".format(crop_file))
+    print("\n" + "Searching {} for existing file crop indexes for subject {}...".format(crop_file, subject))
     print()
 
     # Reads in .csv file
