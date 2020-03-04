@@ -8,7 +8,7 @@ import scipy.stats
 
 class ValidData:
 
-    def __init__(self, subject_object=None, plot=False, write_results=True):
+    def __init__(self, subject_object=None, write_results=True):
         """Generates a class instance that creates and stores data where all devices/models generated valid data.
            Removes periods of invalid ECG data, sleep, and non-wear (NOT CURRENTLY IMPLEMENTED)"""
 
@@ -16,7 +16,6 @@ class ValidData:
         print("====================================== REMOVING INVALID DATA ========================================")
 
         self.subject_object = subject_object
-        self.plot = plot
         self.write_results = write_results
 
         # Data sets ---------------------------------------------------------------------------------------------------
@@ -77,8 +76,7 @@ class ValidData:
             self.write_validity_report()
             self.write_valid_epochs()
 
-        if self.plot:
-            self.plot_validity_data()
+        # self.plot_validity_data()
 
     def organize_data(self):
 
@@ -279,10 +277,10 @@ class ValidData:
             self.hr_validity_counts["Ankle valid"] = round(stats.mean(ankle_valid_data), 1)
             self.hr_validity_counts["Ankle invalid"] = round(stats.mean(ankle_invalid_data), 1)
 
-            ttest_result = scipy.stats.ttest_ind(ankle_valid_data, ankle_valid_data)
+            ttest_result = scipy.stats.ttest_ind(ankle_valid_data, ankle_invalid_data)
 
             ankle_ttest_t = round(ttest_result[0], 2)
-            ankle_ttest_p = round(ttest_result[1], 3)
+            ankle_ttest_p = round(ttest_result[1], 5)
 
             if ankle_ttest_p < .05:
                 print("-Ankle activity may have had a statistically significant effect on ECG validity:")
