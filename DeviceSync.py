@@ -339,6 +339,8 @@ def crop_end(subject_object):
 
             print("-Wrist ended first." + "\n" + "-ECG offset = {}.".format(ecg_end_offset))
 
+    # Values correspond to number of data points to read in
+    # Number of all data points (duration in seconds * sample rate - offset from end)
     end_crop_dict = {"Ankle": ankle_duration * ankle_samplerate - ankle_end_offset,
                      "Wrist": wrist_duration * wrist_samplerate - wrist_end_offset,
                      "ECG": ecg_duration * ecg_samplerate - ecg_end_offset}
