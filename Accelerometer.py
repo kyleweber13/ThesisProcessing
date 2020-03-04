@@ -430,8 +430,11 @@ class Treadmill:
     def plot_treadmill_protocol(self, ankle_object):
         """Plots raw and epoched data during treadmill protocol on subplots."""
 
-        # If raw data vailable
-        try:
+        # If raw data available
+        if ankle_object.raw.timestamps is not None:
+
+            print("\n" + "Plotting raw and epoched treadmill protocol data.")
+
             raw_start = ankle_object.treadmill.treadmill_dict["StartIndex"]
 
             # If StartIndex is N/A...
@@ -468,7 +471,9 @@ class Treadmill:
             plt.show()
 
         # If raw data not available
-        except (AttributeError, TypeError):
+        if ankle_object.raw.timestamps is None:
+
+            print("\n" + "Plotting epoched treadmill protocol data. Raw data not available.")
 
             fig, ax1 = plt.subplots(1, figsize=(10, 7))
 
