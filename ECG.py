@@ -109,7 +109,8 @@ class ECG:
         self.epoch_intensity = None
         self.epoch_intensity_totals = None
 
-        # self.rolling_avg_hr, self.rest_hr = self.find_resting_hr(window_size=self.rest_hr_window)
+        # This block is called later from the Subject class after sleep data is processed
+        # self.rolling_avg_hr, self.rest_hr, self.awake_hr = self.find_resting_hr(window_size=self.rest_hr_window)
         # self.perc_hrr = self.calculate_percent_hrr()
         # self.epoch_intensity, self.intensity_totals = self.calculate_intensity()
 
@@ -241,6 +242,7 @@ class ECG:
 
         # Calculates resting HR during waking hours if sleep_log available --------------------------------------------
         if sleep_status is not None:
+            print("\n" + "Calculating resting HR from periods of wakefulness...")
 
             awake_hr = [rolling_avg[i] for i in range(0, min(len(sleep_status), len(rolling_avg)))
                         if sleep_status[i] == 0 and rolling_avg[i] is not None]
@@ -249,20 +251,20 @@ class ECG:
 
             resting_hr = round(sum(sorted_hr[:n_windows]) / n_windows, 1)
 
-            print()
             print("Resting HR (average of {} lowest {}-second periods while awake) is {} bpm.".format(n_windows,
                                                                                                       window_size,
                                                                                                       resting_hr))
 
         # Calculates resting HR during all hours if sleep_log not available -------------------------------------------
         if sleep_status is None:
+            print("\n" + "Calculating resting HR from periods of all data (sleep data not available)...")
+
             awake_hr = None
 
             sorted_hr = sorted(rolling_avg)
 
             resting_hr = round(sum(sorted_hr[:n_windows]) / n_windows, 1)
 
-            print()
             print("No sleep data found so resting HR cannot be calculated. "
                   "But you probably knew that since you likely got an error...")
             print("If you did want an estimate of resting HR including sleep, 'resting heart rate' (average of {} "
@@ -326,6 +328,9 @@ class ECG:
                     intensity.append(3)
 
         n_valid_epochs = len(self.valid_hr) - self.quality_report["Invalid epochs"]
+
+        if n_valid_epochs == 0:
+            n_valid_epochs = len(self.valid_hr)
 
         # Calculates time spent in each intensity category
         intensity_totals = {"Sedentary": intensity.count(0) / (60 / self.epoch_len),
@@ -415,6 +420,8 @@ class ECG:
         ax2.legend(loc='upper left')
 
         ax3.set_xlabel("Seconds")
+
+        print("\n" + "Showing index {}.".format(start_index))
 
         # Epoched QC data
         try:
