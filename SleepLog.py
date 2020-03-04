@@ -217,9 +217,8 @@ class SleepLog:
         # WRIST ACCELEROMETER ----------------------------------------------------------------------------------------
         try:
             ax1.plot(self.epoch_timestamps[:len(self.wrist_svm)], self.wrist_svm[:len(self.epoch_timestamps)],
-                     label="Wrist", color='black')
+                     label='Wrist', color='black')
             ax1.legend(loc='upper left')
-
             ax1.set_ylabel("Counts")
 
             for day in self.sleep_data:
@@ -237,17 +236,17 @@ class SleepLog:
                         if index == 2:
                             ax1.axvline(x=value, color="red", label="Wake up from nap")
 
-                # Fills in region where participant was asleep
-                for day1, day2 in zip(self.sleep_data[:], self.sleep_data[1:]):
-                    if day1[3] != "N/A" and day2[0] != "N/A":
-                        # Overnight --> green
-                        ax1.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, max(self.wrist_svm)),
-                                          color='green', alpha=0.35)
+            # Fills in region where participant was asleep
+            for day1, day2 in zip(self.sleep_data[:], self.sleep_data[1:]):
+                if day1[3] != "N/A" and day2[0] != "N/A":
+                    # Overnight --> green
+                    ax1.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, max(self.wrist_svm)),
+                                      color='green', alpha=0.35)
 
-                    if day1[2] != "N/A" and day1[1] != "N/A":
-                        # Naps --> red
-                        ax1.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, max(self.wrist_svm)),
-                                          color='red', alpha=0.35)
+                if day1[2] != "N/A" and day1[1] != "N/A":
+                    # Naps --> red
+                    ax1.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, max(self.wrist_svm)),
+                                      color='red', alpha=0.35)
 
         except (AttributeError, TypeError):
             pass
