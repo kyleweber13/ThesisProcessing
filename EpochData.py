@@ -70,7 +70,16 @@ class EpochAccel:
             epoch_timestamps, svm = np.loadtxt(fname=self.processed_file, delimiter=",", skiprows=1,
                                                usecols=(0, 1), unpack=True, dtype="str")
 
-            self.timestamps = [datetime.strptime(i[:-3], "%Y-%m-%dT%H:%M:%S.%f") for i in epoch_timestamps]
+            self.timestamps = []
+
+            for i in epoch_timestamps:
+                try:
+                    self.timestamps.append(datetime.strptime(i[:-3], "%Y-%m-%dT%H:%M:%S.%f"))
+                except ValueError:
+                    try:
+                        self.timestamps.append(datetime.strptime(i, "%Y-%m-%d %H:%M:%S.%f"))
+                    except ValueError:
+                        self.timestamps.append(datetime.strptime(i, "%Y-%m-%d %H:%M:%S"))
 
             self.epoch_len = (self.timestamps[1] - self.timestamps[0]).seconds
             self.svm = [float(i) for i in svm]
@@ -80,7 +89,16 @@ class EpochAccel:
             pred_mets, epoch_intensity = np.loadtxt(fname=self.processed_file, delimiter=",", skiprows=1,
                                                     usecols=(0, 1, 2, 3, 4), unpack=True, dtype="str")
 
-            self.timestamps = [datetime.strptime(i[:-3], "%Y-%m-%dT%H:%M:%S.%f") for i in epoch_timestamps]
+            self.timestamps = []
+
+            for i in epoch_timestamps:
+                try:
+                    self.timestamps.append(datetime.strptime(i[:-3], "%Y-%m-%dT%H:%M:%S.%f"))
+                except ValueError:
+                    try:
+                        self.timestamps.append(datetime.strptime(i, "%Y-%m-%d %H:%M:%S.%f"))
+                    except ValueError:
+                        self.timestamps.append(datetime.strptime(i, "%Y-%m-%d %H:%M:%S"))
 
             self.epoch_len = (self.timestamps[1] - self.timestamps[0]).seconds
             self.svm = [float(i) for i in svm]
