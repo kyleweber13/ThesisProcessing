@@ -145,14 +145,17 @@ class WristModel:
         if self.valid_ecg is not None:
             n_valid_epochs = len(self.epoch_intensity_valid) - self.epoch_intensity_valid.count(None)
 
+            if n_valid_epochs == 0:
+                n_valid_epochs = len(self.epoch_intensity_valid)
+
             self.intensity_totals_valid = {"Sedentary": self.epoch_intensity_valid.count(0) / epoch_to_minutes,
                                            "Sedentary%": round(self.epoch_intensity_valid.count(0) / n_valid_epochs, 3),
                                            "Light": (self.epoch_intensity.count(1)) / epoch_to_minutes,
-                                           "Light%": round(self.epoch_intensity.count(1) / n_valid_epochs, 3),
+                                           "Light%": round(self.epoch_intensity_valid.count(1) / n_valid_epochs, 3),
                                            "Moderate": self.epoch_intensity.count(2) / epoch_to_minutes,
-                                           "Moderate%": round(self.epoch_intensity.count(2) / n_valid_epochs, 3),
+                                           "Moderate%": round(self.epoch_intensity_valid.count(2) / n_valid_epochs, 3),
                                            "Vigorous": self.epoch_intensity.count(3) / epoch_to_minutes,
-                                           "Vigorous%": round(self.epoch_intensity.count(3) / n_valid_epochs, 3)}
+                                           "Vigorous%": round(self.epoch_intensity_valid.count(3) / n_valid_epochs, 3)}
 
         print("Complete.")
 
@@ -180,7 +183,7 @@ class Ankle:
                  output_dir=None, rvo2=None, age=None, epoch_len=15,
                  start_offset=0, end_offset=0,
                  remove_baseline=False, ecg_object=None,
-                 from_processed=True, treadmill_processed=False, treadmill_log_file=None,
+                 from_processed=True, treadmill_log_file=None,
                  processed_folder=None, write_results=False):
 
         print()
@@ -204,7 +207,6 @@ class Ankle:
 
         self.from_processed = from_processed
         self.processed_folder = processed_folder
-        self.treadmill_processed = treadmill_processed
         self.treadmill_log_file = treadmill_log_file
         self.write_results = write_results
 
@@ -328,11 +330,11 @@ class Treadmill:
         self.walk_indexes = []
 
         # Creates treadmill dictionary and walk speed data from spreadsheet data
-        self.treadmill_dict, self.walk_speeds, self.walk_indexes = self.import_log(ankle_object=ankle_object)
+        self.treadmill_dict, self.walk_speeds, self.walk_indexes = self.import_log()
 
         self.avg_walk_counts = self.calculate_average_counts()
 
-    def import_log(self, ankle_object):
+    def import_log(self):
         """Retrieves treadmill protocol information from spreadsheet for correct subject:
            -Protocol start time, walking speeds in m/s, data index that corresponds to start of protocol"""
 
@@ -379,7 +381,7 @@ class Treadmill:
             walk_indexes = []
             walk_speeds = []
 
-            print("\n" + "No processed treadmill data found. Please try again using 'processed_treadmill=False'.")
+            print("\n" + "No processed treadmill data found. Please try again.")
 
         return treadmill_dict, walk_speeds, walk_indexes
 
@@ -521,6 +523,7 @@ class AnkleModel:
         self.epoch_scale = 1
         self.epoch_timestamps = ankle_object.epoch.timestamps
         self.subjectID = ankle_object.subjectID
+        self.filename = ankle_object.filepath
         self.file_id = ankle_object.filepath.split("/")[-1].split(".")[0]
         self.rvo2 = ankle_object.rvo2
         self.tm_object = treadmill_object
@@ -550,7 +553,7 @@ class AnkleModel:
             self.log_dict, self.log_speed = None, None
 
             self.predicted_mets, self.epoch_intensity, \
-            self.intensity_totals = self.calculate_intensity(self.linear_speed)
+                self.intensity_totals = self.calculate_intensity(self.linear_speed)
 
             # Predicted outcome measures from linear regression
             self.epoch_intensity_valid = None
@@ -880,3 +883,6 @@ class AnkleModel:
                 ["Timestamp", "ActivityCount", "PredictedSpeed", "PredictedMETs", "IntensityCategory"])
             writer.writerows(zip(self.epoch_timestamps, self.epoch_data,
                                  self.linear_speed, self.predicted_mets, self.epoch_intensity))
+
+        print("\n" + "Complete. File {}".format(self.output_dir + "Model Output/" +
+                                                self.filename + "_IntensityData.csv"))
