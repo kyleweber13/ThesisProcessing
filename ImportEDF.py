@@ -214,7 +214,7 @@ def check_file(filepath):
     start_time = ecg_file.getStartdatetime()
     end_time = start_time + timedelta(seconds=ecg_file.getFileDuration())
 
-    print("=======================================================")
+    print("=================================================================")
     print(filepath)
     print("Start time: ", start_time)
     print("End time:", end_time)
