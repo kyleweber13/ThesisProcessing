@@ -97,6 +97,7 @@ class ValidData:
         except AttributeError:
             data_len.append(None)
 
+        # Sets shortest data set length to data_len
         self.data_len = min([i for i in data_len if i is not None])
 
         try:
@@ -234,13 +235,19 @@ class ValidData:
         self.hr_validity_counts = {"Wrist valid": None, "Wrist invalid": None,
                                    "Ankle valid": None, "Ankle invalid": None}
 
+        wrist_ttest_t = None
+        wrist_ttest_p = None
+        ankle_ttest_t = None
+        ankle_ttest_p = None
+
         if self.subject_object.wrist_filepath is not None:
 
             wrist_valid_data = [self.subject_object.wrist.epoch.svm[i]
-                                for i in range(0, len(self.subject_object.wrist.epoch.svm))
+                                for i in range(0, self.data_len)
                                 if self.hr_validity[i] == 0]
+
             wrist_invalid_data = [self.subject_object.wrist.epoch.svm[i]
-                                  for i in range(0, len(self.subject_object.wrist.epoch.svm))
+                                  for i in range(0, self.data_len)
                                   if self.hr_validity[i] == 1]
 
             self.hr_validity_counts["Wrist valid"] = round(stats.mean(wrist_valid_data), 1)
@@ -248,24 +255,25 @@ class ValidData:
 
             ttest_result = scipy.stats.ttest_ind(wrist_valid_data, wrist_invalid_data)
 
-            ttest_t = round(ttest_result[0], 2)
-            ttest_p = round(ttest_result[1], 3)
+            wrist_ttest_t = round(ttest_result[0], 2)
+            wrist_ttest_p = round(ttest_result[1], 3)
 
-            if ttest_p < .05:
+            if wrist_ttest_p < .05:
                 print("-Wrist activity may have had a statistically significant effect on ECG validity:")
-            if ttest_p >= .05:
+            if wrist_ttest_p >= .05:
                 print("-Wrist activity does not appear to have had a statistically significant effect on ECG validity:")
 
             print("    - Valid counts = {}; invalid counts = {} "
                   "(t = {}, p ~ {})".format(self.hr_validity_counts["Wrist valid"],
-                                            self.hr_validity_counts["Wrist invalid"], ttest_t, ttest_p))
+                                            self.hr_validity_counts["Wrist invalid"], wrist_ttest_t, wrist_ttest_p))
 
         if self.subject_object.ankle_filepath is not None:
             ankle_valid_data = [self.subject_object.ankle.epoch.svm[i]
-                                for i in range(0, len(self.subject_object.ankle.epoch.svm))
+                                for i in range(0, self.data_len)
                                 if self.hr_validity[i] == 0]
+
             ankle_invalid_data = [self.subject_object.ankle.epoch.svm[i]
-                                  for i in range(0, len(self.subject_object.ankle.epoch.svm))
+                                  for i in range(0, self.data_len)
                                   if self.hr_validity[i] == 1]
 
             self.hr_validity_counts["Ankle valid"] = round(stats.mean(ankle_valid_data), 1)
@@ -273,17 +281,26 @@ class ValidData:
 
             ttest_result = scipy.stats.ttest_ind(ankle_valid_data, ankle_valid_data)
 
-            ttest_t = round(ttest_result[0], 2)
-            ttest_p = round(ttest_result[1], 3)
+            ankle_ttest_t = round(ttest_result[0], 2)
+            ankle_ttest_p = round(ttest_result[1], 3)
 
-            if ttest_p < .05:
+            if ankle_ttest_p < .05:
                 print("-Ankle activity may have had a statistically significant effect on ECG validity:")
-            if ttest_p >= .05:
+            if ankle_ttest_p >= .05:
                 print("-Ankle activity does not appear to have had a statistically significant effect on ECG validity:")
 
             print("    - Valid counts = {}; invalid counts = {} "
                   "(t = {}, p ~ {})".format(self.hr_validity_counts["Ankle valid"],
-                                            self.hr_validity_counts["Ankle invalid"], ttest_t, ttest_p))
+                                            self.hr_validity_counts["Ankle invalid"], ankle_ttest_t, ankle_ttest_p))
+
+        self.validity_dict["Ankle Valid Counts"] = self.hr_validity_counts["Ankle valid"]
+        self.validity_dict["Ankle Invalid Counts"] = self.hr_validity_counts["Ankle invalid"]
+        self.validity_dict["Ankle Counts (t)"] = ankle_ttest_t
+        self.validity_dict["Ankle Counts (p)"] = ankle_ttest_p
+        self.validity_dict["Wrist Valid Counts"] = self.hr_validity_counts["Wrist valid"]
+        self.validity_dict["Wrist Invalid Counts"] = self.hr_validity_counts["Wrist invalid"]
+        self.validity_dict["Wrist Counts (t)"] = wrist_ttest_t
+        self.validity_dict["Wrist Counts (p)"] = wrist_ttest_p
 
     def plot_validity_data(self):
         """Generates 4 subplots for each activity model with invalid data removed."""
@@ -293,8 +310,8 @@ class ValidData:
         locator = mdates.HourLocator(byhour=[0, 12], interval=1)
 
         fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, sharex='col', figsize=(10, 7))
-        ax1.set_title("Participant {}: Valid Data ({}% valid)".format(self.subject_object.subjectID,
-                                                                      self.percent_valid))
+        ax1.set_title("Participant {}: Valid Data ({}% valid) (grey = sleep)".format(self.subject_object.subjectID,
+                                                                                     self.percent_valid))
 
         # Fills in region where participant was asleep
         for day1, day2 in zip(self.subject_object.sleep.sleep_data[:], self.subject_object.sleep.sleep_data[1:]):
@@ -469,9 +486,13 @@ class ValidData:
 
     def write_validity_report(self):
 
-        with open("/Users/kyleweber/Desktop/QC Data/" + self.subject_object.subjectID +
+        with open(self.subject_object.output_dir + "Validity Check/" + self.subject_object.subjectID +
                   "_ValidityData.csv", "w") as outfile:
             fieldnames = ['Valid ECG %', 'ECG Hours Lost',
+                          'Ankle Valid Counts', 'Ankle Invalid Counts',
+                          'Ankle Counts (t)', 'Ankle Counts (p)',
+                          'Wrist Valid Counts', 'Wrist Invalid Counts',
+                          'Wrist Counts (t)', 'Wrist Counts (p)',
                           'Sleep %', 'Sleep Hours Lost',
                           'Total Valid %', "Total Hours Valid"]
 
@@ -480,5 +501,5 @@ class ValidData:
             writer.writeheader()
             writer.writerow(self.validity_dict)
 
-        print("\n" + "Saved validity summary data to file /Users/kyleweber/Desktop/QC Data/" +
+        print("\n" + "Saved validity summary data to file {}".format(self.subject_object.output_dir) +
               self.subject_object.subjectID + "_ValidityData.csv")
