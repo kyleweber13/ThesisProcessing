@@ -248,13 +248,20 @@ class ValidData:
                                   for i in range(0, self.data_len)
                                   if self.hr_validity[i] == 1]
 
+            valid_mean = stats.mean(wrist_valid_data)
+            valid_sem = stats.stdev(wrist_valid_data) / (len(wrist_valid_data) ** (1/2))
+            invalid_mean = stats.mean(wrist_invalid_data)
+            invalid_sem = stats.stdev(wrist_invalid_data) / (len(wrist_invalid_data) ** (1/2))
+
             self.hr_validity_counts["Wrist valid"] = round(stats.mean(wrist_valid_data), 1)
+            self.hr_validity_counts["Wrist valid SEM"] = valid_sem
             self.hr_validity_counts["Wrist invalid"] = round(stats.mean(wrist_invalid_data), 1)
+            self.hr_validity_counts["Wrist invalid SEM"] = invalid_sem
 
             ttest_result = scipy.stats.ttest_ind(wrist_valid_data, wrist_invalid_data)
 
             wrist_ttest_t = round(ttest_result[0], 2)
-            wrist_ttest_p = round(ttest_result[1], 3)
+            wrist_ttest_p = round(ttest_result[1], 5)
 
             if wrist_ttest_p < .05:
                 print("-Wrist activity may have had a statistically significant effect on ECG validity:")
@@ -274,8 +281,15 @@ class ValidData:
                                   for i in range(0, self.data_len)
                                   if self.hr_validity[i] == 1]
 
+            valid_mean = stats.mean(ankle_valid_data)
+            valid_sem = stats.stdev(ankle_valid_data) / (len(ankle_valid_data) ** (1/2))
+            invalid_mean = stats.mean(ankle_valid_data)
+            invalid_sem = stats.stdev(ankle_invalid_data) / (len(ankle_invalid_data) ** (1/2))
+
             self.hr_validity_counts["Ankle valid"] = round(stats.mean(ankle_valid_data), 1)
+            self.hr_validity_counts["Ankle valid SEM"] = valid_sem
             self.hr_validity_counts["Ankle invalid"] = round(stats.mean(ankle_invalid_data), 1)
+            self.hr_validity_counts["Ankle invalid SEM"] = invalid_sem
 
             ttest_result = scipy.stats.ttest_ind(ankle_valid_data, ankle_invalid_data)
 
@@ -299,6 +313,19 @@ class ValidData:
         self.validity_dict["Wrist Invalid Counts"] = self.hr_validity_counts["Wrist invalid"]
         self.validity_dict["Wrist Counts (t)"] = wrist_ttest_t
         self.validity_dict["Wrist Counts (p)"] = wrist_ttest_p
+
+    def plot_validity_comparison(self):
+
+        plt.bar(x=["Valid Wrist", "Invalid Wrist", "Valid Ankle", "Invalid Ankle"],
+                height=[self.hr_validity_counts["Wrist valid"], self.hr_validity_counts["Wrist invalid"],
+                        self.hr_validity_counts["Ankle valid"], self.hr_validity_counts["Ankle invalid"]],
+                color=['blue', 'blue', 'red', 'red'], edgecolor='black', alpha=0.75,
+                yerr=[self.hr_validity_counts["Wrist valid SEM"], self.hr_validity_counts["Wrist invalid SEM"],
+                      self.hr_validity_counts["Ankle valid SEM"], self.hr_validity_counts["Ankle invalid SEM"]],
+                capsize=3)
+        plt.ylabel("Counts")
+        plt.title("Participant {}: Accelerometer counts based on ECG validity "
+                  "(mean ± SEM)".format(self.subject_object.subjectID))
 
     def plot_validity_data(self):
         """Generates 4 subplots for each activity model with invalid data removed."""
