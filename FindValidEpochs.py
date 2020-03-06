@@ -14,6 +14,7 @@ class AllDevices:
 
         print()
         print("====================================== REMOVING INVALID DATA ========================================")
+        print("\n" + "Using ECG and sleep data to find valid epochs...")
 
         self.subject_object = subject_object
         self.write_results = write_results
@@ -538,6 +539,7 @@ class AccelOnly:
 
         print()
         print("====================================== REMOVING INVALID DATA ========================================")
+        print("\n" + "Using only sleep to find valid epochs in accelerometer data...")
 
         self.subject_object = subject_object
         self.write_results = write_results
@@ -560,6 +562,7 @@ class AccelOnly:
         # Dictionaries for activity totals using valid data
         self.ankle_totals = None
         self.wrist_totals = None
+        self.hr_totals = None
 
         self.percent_valid = None
         self.hours_valid = None
@@ -682,8 +685,8 @@ class AccelOnly:
         locator = mdates.HourLocator(byhour=[0, 12], interval=1)
 
         fig, (ax1, ax2) = plt.subplots(2, sharex='col', figsize=(10, 7))
-        ax1.set_title("Participant {}: Valid Data ({}% valid) (grey = sleep)".format(self.subject_object.subjectID,
-                                                                                     self.percent_valid))
+        ax1.set_title("Participant {}: Accel-Only Valid Data ({}% valid) "
+                      "(grey = sleep)".format(self.subject_object.subjectID, self.percent_valid))
 
         # Fills in region where participant was asleep
         for day1, day2 in zip(self.subject_object.sleep.sleep_data[:], self.subject_object.sleep.sleep_data[1:]):
@@ -718,6 +721,12 @@ class AccelOnly:
         plt.show()
 
     def recalculate_activity_totals(self):
+
+        self.hr_totals = {"Model": "HR",
+                          "Sedentary": 0, "Sedentary%": 0,
+                          "Light": 0, "Light%": 0,
+                          "Moderate": 0, "Moderate%": 0,
+                          "Vigorous": 0, "Vigorous%": 0}
 
         # ANKLE -------------------------------------------------------------------------------------------------------
         if self.ankle is not None:
@@ -817,4 +826,4 @@ class AccelOnly:
             writer.writerow(self.validity_dict)
 
         print("\n" + "Saved validity summary data to file {}".format(self.subject_object.output_dir) +
-              self.subject_object.subjectID + "_ValidityData_AccelOnly.csv")
+              "Validity Check/" + self.subject_object.subjectID + "_ValidityData_AccelOnly.csv")
