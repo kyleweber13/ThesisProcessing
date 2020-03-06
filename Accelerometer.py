@@ -223,7 +223,7 @@ class Ankle:
         self.treadmill = Treadmill(subjectID=self.subjectID, ankle_object=self, tm_log_file=self.treadmill_log_file)
 
         # Create AnkleModel object
-        self.model = AnkleModel(ankle_object=self, treadmill_object=self.treadmill, write_results=self.write_results,
+        self.model = AnkleModel(ankle_object=self, write_results=self.write_results,
                                 ecg_object=self.ecg_object)
 
     def plot_raw_over_epoch(self, day, downsample=3):
@@ -339,9 +339,8 @@ class Treadmill:
            -Protocol start time, walking speeds in m/s, data index that corresponds to start of protocol"""
 
         # Reads in relevant treadmill protocol details
-        log = np.loadtxt(fname=self.log_file, delimiter=",", dtype="str", usecols=(0, 3, 6, 9, 11, 13, 15, 17,
-                                                                               22, 23, 24, 25, 26, 27, 28, 29, 30, 31),
-                         skiprows=1)
+        log = np.loadtxt(fname=self.log_file, delimiter=",", dtype="str",
+                         usecols=(0, 3, 6, 9, 11, 13, 15, 17, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31), skiprows=1)
 
         valid_data = False
 
@@ -437,6 +436,9 @@ class Treadmill:
 
             raw_start = ankle_object.treadmill.treadmill_dict["StartIndex"]
 
+            if raw_start == "None":
+                raw_start = 0
+
             # If StartIndex is N/A...
             try:
                 epoch_start = int(raw_start / (ankle_object.raw.sample_rate * ankle_object.epoch_len))
@@ -513,7 +515,7 @@ class Treadmill:
 
 class AnkleModel:
 
-    def __init__(self, ankle_object, treadmill_object, write_results=False, ecg_object=None):
+    def __init__(self, ankle_object, write_results=False, ecg_object=None):
         """Class that stores ankle model data. Performs regression analysis on activity counts vs. gait speed.
         Predicts gait speed and METs from activity counts using ACSM equation that predicts VO2 from gait speed.
 
@@ -531,7 +533,7 @@ class AnkleModel:
         self.filename = ankle_object.filepath
         self.file_id = ankle_object.filepath.split("/")[-1].split(".")[0]
         self.rvo2 = ankle_object.rvo2
-        self.tm_object = treadmill_object
+        self.tm_object = ankle_object.treadmill
         self.walk_indexes = None
         self.write_results = write_results
 
@@ -640,7 +642,15 @@ class AnkleModel:
 
         # Creates a list of predicted speeds where any speed below the sedentary threshold is set to 0 m/s
         above_sed_thresh = []
-        meaningful_threshold = self.tm_object.avg_walk_counts[2] / 3
+
+        # Threshold corresponding to a 5-second walk at preferred speed
+        meaningful_threshold = self.tm_object.avg_walk_counts[2] / (self.epoch_len / 5)
+
+        # Sets threshold to either meaningful_threshold OR light_counts based on which is greater
+        if meaningful_threshold >= light_counts:
+            meaningful_threshold = meaningful_threshold
+        if meaningful_threshold < light_counts:
+            meaningful_threshold = light_counts
 
         for speed, counts in zip(linear_predicted_speed, self.epoch_data):
             if counts >= meaningful_threshold:
@@ -649,12 +659,18 @@ class AnkleModel:
                 above_sed_thresh.append(0)
 
         linear_reg_dict = {"a": coefficient, "b": y_intercept,  "r2": self.r2,
-                           "Light speed": light_speed, "Light counts": light_counts,
-                           "Moderate speed": mod_speed, "Moderate counts": mod_counts,
-                           "Vigorous speed": vig_speed, "Vigorous counts": vig_counts,
+                           "Light speed": round(light_speed, 3), "Light counts": light_counts,
+                           "Moderate speed": round(mod_speed, 3), "Moderate counts": mod_counts,
+                           "Vigorous speed": round(vig_speed, 3), "Vigorous counts": vig_counts,
                            "Meaningful threshold": meaningful_threshold}
 
         return linear_reg_dict, above_sed_thresh
+
+    def counts_to_speed(self, count):
+
+        speed = self.linear_dict["a"] * count + self.linear_dict["b"]
+
+        print("-Predicted speed for {} counts is {} m/s.".format(count, round(speed, 3)))
 
     def calculate_quad_regression(self):
 
@@ -727,11 +743,10 @@ class AnkleModel:
     def plot_regression(self, regression_type="linear"):
         """Plots measured results and results predicted from regression."""
 
-        # Non-specific variables
-        min_value = min(self.epoch_data)
-        max_value = max(self.epoch_data)
+        # Variables from each regression type ------------------------------------------------------------------------
+        min_value = np.floor(min(self.epoch_data))
+        max_value = np.ceil(max(self.epoch_data))
 
-        # Variables from each regression type
         if regression_type == "linear" or regression_type == "l":
             regression_type = "linear"
             dict = self.linear_dict
@@ -739,15 +754,27 @@ class AnkleModel:
                           for i in np.arange(0, max_value)]
             predicted_max = max_value * self.linear_dict["a"] + self.linear_dict["b"]
 
+            # Threshold below which counts are considered noise (100% preferred speed / 3)
+            meaningful_thresh = self.linear_dict["Meaningful threshold"]
+
+            # Uses regression to calculate speed equivalent at meaningful threshold
+            # No physiological meaning if it is derived from meaningful threshold instead of light counts
+            light_speed = self.linear_dict["Meaningful threshold"] * self.linear_dict["a"] + self.linear_dict["b"]
+
+            min_value = 0
+
         if regression_type == "quadratic" or regression_type == "q":
             regression_type = "quadratic"
             dict = self.quad_dict
             curve_data = [self.quad_dict["a"] * i ** 2 + self.quad_dict["b"] * i + self.quad_dict["c"] for i in
                           np.arange(min_value, max_value)]
             predicted_max = self.quad_dict["a"] * max_value ** 2 + self.quad_dict["b"] * max_value + self.quad_dict["c"]
+            meaningful_thresh = 0
 
         if regression_type == "log":
             dict = self.log_dict
+
+        # Plot --------------------------------------------------------------------------------------------------------
 
         plt.figure(figsize=(10, 7))
 
@@ -760,11 +787,11 @@ class AnkleModel:
                  label='Regression line (r^2 = {})'.format(dict["r2"]), color='#1993C5', linestyle='dashed')
 
         # Fills in regions for different intensities
-        plt.fill_between(x=[0, dict["Light counts"]], y1=0, y2=dict["Light speed"],
+        plt.fill_between(x=[0, meaningful_thresh], y1=0, y2=light_speed,
                          color='grey', alpha=0.5, label="Sedentary")
 
-        plt.fill_between(x=[dict["Light counts"], dict["Moderate counts"]],
-                         y1=dict["Light speed"], y2=dict["Moderate speed"],
+        plt.fill_between(x=[meaningful_thresh, dict["Moderate counts"]],
+                         y1=light_speed, y2=dict["Moderate speed"],
                          color='green', alpha=0.5, label="Light")
 
         plt.fill_between(x=[dict["Moderate counts"], dict["Vigorous counts"]],
