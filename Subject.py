@@ -25,15 +25,20 @@ warnings.filterwarnings("ignore")
 
 class Subject:
 
-    def __init__(self, raw_edf_folder=None, subjectID=None,
+    def __init__(self, from_processed, raw_edf_folder=None, subjectID=None,
                  load_wrist=False, load_ankle=False, load_ecg=False,
                  load_raw_ecg=False, load_raw_ankle=False, load_raw_wrist=False,
                  epoch_len=15, remove_epoch_baseline=False,
                  rest_hr_window=60, n_epochs_rest_hr=10,
                  crop_index_file=None, filter_ecg=False, plot_data=False,
-                 from_processed=True, output_dir=None,
+                 output_dir=None,
                  write_results=False, treadmill_log_file=None,
                  demographics_file=None, sleeplog_folder=None):
+
+        print()
+        print("========================================= SUBJECT #{} "
+              "=============================================".format(subjectID))
+        print()
 
         processing_start = datetime.now()
 
@@ -59,7 +64,6 @@ class Subject:
         self.wrist_filepath, self.ankle_filepath, self.ecg_filepath = self.get_raw_filenames()
 
         self.filter_ecg = filter_ecg
-        self.plot_data = plot_data
 
         self.starttime_dict = {"Ankle": None, "Wrist": None, "ECG": None}
 
@@ -77,24 +81,39 @@ class Subject:
         self.n_epochs_rest_hr = n_epochs_rest_hr
 
         self.from_processed = from_processed
-        self.output_dir = output_dir
-        self.processed_folder = self.output_dir + "Model Output/"
 
         self.write_results = write_results
+
+        # Creates timestamp formatting error if read from processed and then write new file. Fix later.
+        if self.from_processed:
+            self.write_results = False
+
+        self.output_dir = output_dir
+        self.processed_folder = self.output_dir + "Model Output/"
 
         self.treadmill_log_file = treadmill_log_file
         self.sleeplog_folder = sleeplog_folder
 
         # FILE CROPPING ----------------------------------------------------------------------------------------------
-        # Looks for previously-determined crop indexes
-        self.start_offset_dict, self.end_offset_dict, self.crop_indexes_found = \
-            ImportCropIndexes.import_crop_indexes(subject=self.subjectID, crop_file=self.crop_index_file)
+        # Looks for previously-determined crop indexes from .csv
+        if self.crop_index_file is not None:
+            self.start_offset_dict, self.end_offset_dict, self.crop_indexes_found = \
+                ImportCropIndexes.import_crop_indexes(subject=self.subjectID, crop_file=self.crop_index_file)
+        if self.crop_index_file is None:
+            self.crop_indexes_found = False
+
+        # If no ECG file is loaded, the whole wrist/ankle files are loaded
+        if self.ecg_filepath is None and self.ankle_filepath is not None and self.wrist_filepath is not None:
+            self.crop_indexes_found = False
 
         # If no existing crop indexes exist...
         if not self.crop_indexes_found:
+
+            # Only bothers to run this if reading raw data
             if not self.from_processed:
                 self.start_offset_dict = DeviceSync.crop_start(subject_object=self)
                 self.end_offset_dict = DeviceSync.crop_end(subject_object=self)
+
             if self.from_processed:
                 self.start_offset_dict = {"Ankle": 0, "Wrist": 0, "ECG": 0}
                 self.end_offset_dict = {"Ankle": 0, "Wrist": 0, "ECG": 0}
@@ -153,10 +172,14 @@ class Subject:
             self.ecg.epoch_intensity, self.ecg.intensity_totals = self.ecg.calculate_intensity()
 
         # Processing that is only run if more than one device is loaded ----------------------------------------------
-        if self.load_wrist + self.load_ecg + self.load_ankle > 1:
+        # if self.load_wrist + self.load_ecg + self.load_ankle > 1:
+        if self.wrist_filepath is not None and self.ankle_filepath is not None:
+            self.valid_all = None
+            self.valid_accelonly = FindValidEpochs.AccelOnly(subject_object=self, write_results=self.write_results)
 
+        if self.load_wrist + self.load_ecg + self.load_ankle > 1:
             # Creates subsets of data where only epochs where all data was valid are included
-            self.valid = FindValidEpochs.ValidData(subject_object=self, write_results=self.write_results)
+            self.valid_all = FindValidEpochs.AllDevices(subject_object=self, write_results=self.write_results)
 
             # Runs statistical analysis
             self.stats = ModelStats.Stats(subject_object=self)
@@ -167,10 +190,6 @@ class Subject:
         print("======================================================================================================")
         print("TOTAL PROCESSING TIME = {} SECONDS.".format(round((processing_end-processing_start).seconds, 1)))
         print("======================================================================================================")
-
-        if self.plot_data:
-            self.plot_epoched()
-            self.valid.plot_validity_data()
 
     def get_raw_filenames(self):
 
@@ -212,7 +231,8 @@ class Subject:
         return wrist_filename, ankle_filename, ecg_filename
 
     def plot_epoched(self):
-        """Plots epoched wrist, ankle, and HR data on 3 subplots."""
+        """Plots epoched wrist, ankle, and HR data on 3 subplots. Data is not removed for invalid periods; all
+           available data is plotted."""
 
         fig, (ax1, ax2, ax3) = plt.subplots(3, sharex="col", figsize=(10, 7))
         ax1.set_title("Multi-Device Data: {}".format(self.subjectID))
@@ -263,28 +283,29 @@ class Subject:
         ax3.xaxis.set_major_locator(locator)
         plt.xticks(rotation=45, fontsize=6)
 
-    def plot_total_activity(self):
+    def plot_total_activity(self, validity_object):
         """Generates barplots of total activity minutes for each model.
         """
 
-        sedentary_minutes = [self.valid.wrist_totals["Sedentary"],
-                             self.valid.ankle_totals["Sedentary"],
-                             self.valid.hr_totals["Sedentary"],
+        # 0s are placeholders for Hr-Acc model
+        sedentary_minutes = [validity_object.wrist_totals["Sedentary"],
+                             validity_object.ankle_totals["Sedentary"],
+                             validity_object.hr_totals["Sedentary"],
                              0]
 
-        light_minutes = [self.valid.wrist_totals["Light"],
-                         self.valid.ankle_totals["Light"],
-                         self.valid.hr_totals["Light"],
+        light_minutes = [validity_object.wrist_totals["Light"],
+                         validity_object.ankle_totals["Light"],
+                         validity_object.hr_totals["Light"],
                          0]
 
-        moderate_minutes = [self.valid.wrist_totals["Moderate"],
-                            self.valid.ankle_totals["Moderate"],
-                            self.valid.hr_totals["Moderate"],
+        moderate_minutes = [validity_object.wrist_totals["Moderate"],
+                            validity_object.ankle_totals["Moderate"],
+                            validity_object.hr_totals["Moderate"],
                             0]
 
-        vigorous_minutes = [self.valid.wrist_totals["Vigorous"],
-                            self.valid.ankle_totals["Vigorous"],
-                            self.valid.hr_totals["Vigorous"],
+        vigorous_minutes = [validity_object.wrist_totals["Vigorous"],
+                            validity_object.ankle_totals["Vigorous"],
+                            validity_object.hr_totals["Vigorous"],
                             0]
 
         plt.subplots(2, 2, figsize=(10, 7))
@@ -325,3 +346,43 @@ class Subject:
         print("Vigorous:  wrist = {} minutes, ankle = {} minutes, "
               "HR = {} minutes, HR-Acc = {} minutes.".format(vigorous_minutes[0], vigorous_minutes[1],
                                                              vigorous_minutes[2], vigorous_minutes[3]))
+
+    def plot_accel_ecg_quality(self):
+        """Plots raw ankle and wrist accelerometer data, raw ECG data, and ECG validity data."""
+
+        fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, sharex='col', figsize=(10, 7))
+
+        xfmt = mdates.DateFormatter("%a %b %d, %H:%M")
+        locator = mdates.HourLocator(byhour=[0, 8, 16], interval=1)
+
+        ax1.set_title("Participant {}: Movement's effect on ECG validity".format(self.subjectID))
+
+        if self.wrist_filepath is not None and self.load_raw_wrist:
+            ax1.plot(self.wrist.raw.timestamps[::3], self.wrist.raw.x[::3], color='black',
+                     label='Wrist ({}Hz)'.format(int(self.wrist.raw.sample_rate) / 3))
+            ax1.set_ylabel("G's")
+            ax1.legend(loc='upper left')
+            ax1.set_ylim(-8, 8)
+
+        if self.ankle_filepath is not None and self.load_raw_ankle:
+            ax2.plot(self.ankle.raw.timestamps[::3], self.ankle.raw.x[::3], color='black',
+                     label='Ankle ({}Hz'.format(int(self.ankle.raw.sample_rate) / 3))
+            ax2.set_ylabel("G's")
+            ax2.legend(loc='upper left')
+            ax2.set_ylim(-8, 8)
+
+        if self.ecg_filepath is not None and self.load_raw_ecg:
+            ax3.plot(self.ecg.timestamps[::5], self.ecg.filtered[::5], color='red',
+                     label='ECG ({}Hz, filtered)'.format(int(self.ecg.sample_rate) / 5))
+            ax3.set_ylabel("Voltage")
+            ax3.legend(loc='upper left')
+
+        if self.ecg_filepath is not None and self.load_raw_wrist and self.ecg.epoch_validity is not None:
+            ax4.plot(self.ecg.epoch_timestamps, self.ecg.epoch_validity, color='black', label="ECG Validity")
+            ax4.fill_between(x=self.ecg.epoch_timestamps, y1=0, y2=self.ecg.epoch_validity, color='grey')
+            ax4.set_ylabel("1 = invalid")
+            ax4.legend(loc='upper left')
+
+        ax4.xaxis.set_major_formatter(xfmt)
+        ax4.xaxis.set_major_locator(locator)
+        plt.xticks(rotation=45, fontsize=6)
