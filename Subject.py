@@ -57,6 +57,11 @@ class Subject:
         self.load_raw_ankle = load_raw_ankle
         self.load_raw_wrist = load_raw_wrist
 
+        if not self.load_ecg and self.load_ankle and self.load_wrist:
+            self.accel_only = True
+        if self.load_ecg:
+            self.accel_only = False
+
         self.demographics_file = demographics_file
         self.demographics = ImportDemographics.import_demographics(demographics_file=self.demographics_file,
                                                                    subjectID=self.subjectID)
@@ -158,7 +163,7 @@ class Subject:
         # Objects from Accelerometer script
         if self.wrist_filepath is not None:
             self.wrist = Accelerometer.Wrist(filepath=self.wrist_filepath, load_raw=self.load_raw_wrist,
-                                             output_dir=self.output_dir,
+                                             output_dir=self.output_dir, accel_only=self.accel_only,
                                              processed_folder=self.processed_folder, from_processed=self.from_processed,
                                              write_results=self.write_results,
                                              start_offset=self.start_offset_dict["Wrist"],
@@ -167,7 +172,7 @@ class Subject:
 
         if self.ankle_filepath is not None:
             self.ankle = Accelerometer.Ankle(filepath=self.ankle_filepath, load_raw=self.load_raw_ankle,
-                                             output_dir=self.output_dir,
+                                             output_dir=self.output_dir, accel_only=self.accel_only,
                                              remove_baseline=self.remove_epoch_baseline,
                                              processed_folder=self.processed_folder, from_processed=self.from_processed,
                                              treadmill_log_file=self.treadmill_log_file,
