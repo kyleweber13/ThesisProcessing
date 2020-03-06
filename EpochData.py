@@ -5,14 +5,20 @@ import math
 
 class EpochAccel:
 
-    def __init__(self, raw_data=None, remove_baseline=False, from_processed=True, processed_folder=None, epoch_len=15):
+    def __init__(self, raw_data=None, remove_baseline=False, from_processed=True,
+                 processed_folder=None, accel_only=False, epoch_len=15):
 
         self.epoch_len = epoch_len
         self.remove_baseline = remove_baseline
         self.from_processed = from_processed
+        self.accel_only = accel_only
         self.processed_folder = processed_folder
         self.raw_filename = raw_data.filepath.split("/")[-1].split(".")[0]
-        self.processed_file = self.processed_folder + self.raw_filename + "_IntensityData.csv"
+
+        if not self.accel_only:
+            self.processed_file = self.processed_folder + self.raw_filename + "_IntensityData.csv"
+        if self.accel_only:
+            self.processed_file = self.processed_folder + self.raw_filename + "_IntensityData_AccelOnly.csv"
 
         self.svm = []
         self.timestamps = None
@@ -72,6 +78,54 @@ class EpochAccel:
     def epoch_from_processed(self):
 
         print("\n" + "Importing data processed from {}.".format(self.processed_folder))
+
+        # Data import from .csv
+        if "Wrist" in self.processed_file:
+            epoch_timestamps, svm = np.loadtxt(fname=self.processed_file, delimiter=",", skiprows=1,
+                                               usecols=(0, 1), unpack=True, dtype="str")
+
+            self.timestamps = []
+
+            for i in epoch_timestamps:
+                try:
+                    self.timestamps.append(datetime.strptime(i[:-3], "%Y-%m-%dT%H:%M:%S.%f"))
+                except ValueError:
+                    try:
+                        self.timestamps.append(datetime.strptime(i, "%Y-%m-%d %H:%M:%S.%f"))
+                    except ValueError:
+                        self.timestamps.append(datetime.strptime(i, "%Y-%m-%d %H:%M:%S"))
+
+            self.epoch_len = (self.timestamps[1] - self.timestamps[0]).seconds
+            self.svm = [float(i) for i in svm]
+
+        if "Ankle" in self.processed_file:
+            epoch_timestamps, svm, pred_speed, \
+            pred_mets, epoch_intensity = np.loadtxt(fname=self.processed_file, delimiter=",", skiprows=1,
+                                                    usecols=(0, 1, 2, 3, 4), unpack=True, dtype="str")
+
+            self.timestamps = []
+
+            for i in epoch_timestamps:
+                try:
+                    self.timestamps.append(datetime.strptime(i[:-3], "%Y-%m-%dT%H:%M:%S.%f"))
+                except ValueError:
+                    try:
+                        self.timestamps.append(datetime.strptime(i, "%Y-%m-%d %H:%M:%S.%f"))
+                    except ValueError:
+                        self.timestamps.append(datetime.strptime(i, "%Y-%m-%d %H:%M:%S"))
+
+            self.epoch_len = (self.timestamps[1] - self.timestamps[0]).seconds
+            self.svm = [float(i) for i in svm]
+
+            self.pred_mets = [float(i) for i in pred_mets]
+            self.pred_speed = [float(i) for i in pred_speed]
+            self.intensity_cat = [int(i) for i in epoch_intensity]
+
+        print("Complete.")
+
+    def epoch_from_processed_accelonly(self):
+
+        print("\n" + "Importing accelerometer-only data processed from {}.".format(self.processed_folder))
 
         # Data import from .csv
         if "Wrist" in self.processed_file:
