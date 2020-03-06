@@ -94,29 +94,56 @@ class Subject:
         self.treadmill_log_file = treadmill_log_file
         self.sleeplog_folder = sleeplog_folder
 
-        # FILE CROPPING ----------------------------------------------------------------------------------------------
-        # Looks for previously-determined crop indexes from .csv
-        if self.crop_index_file is not None:
-            self.start_offset_dict, self.end_offset_dict, self.crop_indexes_found = \
-                ImportCropIndexes.import_crop_indexes(subject=self.subjectID, crop_file=self.crop_index_file)
-        if self.crop_index_file is None:
-            self.crop_indexes_found = False
+        # FILE CROPPING -----------------------------------------------------------------------------------------------
 
-        # If no ECG file is loaded, the whole wrist/ankle files are loaded
-        if self.ecg_filepath is None and self.ankle_filepath is not None and self.wrist_filepath is not None:
-            self.crop_indexes_found = False
+        # File summaries
+        print("EDF file summaries...")
+        ImportEDF.check_file(self.ankle_filepath)
+        ImportEDF.check_file(self.wrist_filepath)
+        ImportEDF.check_file(self.ecg_filepath)
 
-        # If no existing crop indexes exist...
-        if not self.crop_indexes_found:
+        self.crop_indexes_found = False
 
-            # Only bothers to run this if reading raw data
-            if not self.from_processed:
+        # If ECG and at least one accelerometer are available
+        if self.ecg_filepath is not None and (self.wrist_filepath is not None or self.ankle_filepath is not None):
+
+            # Reads in data from file if available
+            if self.crop_index_file is not None:
+                self.start_offset_dict, self.end_offset_dict, self.crop_indexes_found = \
+                    ImportCropIndexes.import_crop_indexes(subject=self.subjectID, crop_file=self.crop_index_file)
+
+            # Reads data from raw if crop file not available or no data found for participant
+            if self.crop_index_file is None or not self.crop_indexes_found:
                 self.start_offset_dict = DeviceSync.crop_start(subject_object=self)
                 self.end_offset_dict = DeviceSync.crop_end(subject_object=self)
 
-            if self.from_processed:
-                self.start_offset_dict = {"Ankle": 0, "Wrist": 0, "ECG": 0}
-                self.end_offset_dict = {"Ankle": 0, "Wrist": 0, "ECG": 0}
+        # If ECG not available but wrist and ankle accelerometers are
+        if self.ecg_filepath is None and self.wrist_filepath is not None and self.ankle_filepath is not None:
+
+            # Reads from csv if available
+            if self.crop_index_file is not None:
+                print("Crop file not entered/found. Ankle treadmill protocol indexes may be incorrect.")
+                self.start_offset_dict, self.end_offset_dict, self.crop_indexes_found = \
+                    ImportCropIndexes.import_crop_indexes(subject=self.subjectID, crop_file=self.crop_index_file)
+
+            # Reads from raw if participant not found in csv or csv does not exist
+            if not self.crop_indexes_found:
+                self.start_offset_dict = DeviceSync.crop_start(subject_object=self)
+
+            # Overwrites end indexes with values from raw accel files (excludes ECG)
+            self.end_offset_dict = DeviceSync.crop_end(subject_object=self)
+
+        # Sets to default values if reading from processed (values not used) if not raw data is read in
+        if self.from_processed and not self.load_raw_ecg and not self.load_raw_ankle and not self.load_raw_wrist:
+            self.start_offset_dict = {"Ankle": 0, "Wrist": 0, "ECG": 0}
+            self.end_offset_dict = {"Ankle": 0, "Wrist": 0, "ECG": 0}
+
+        print("Start indexes: ankle = {}, wrist = {}, ECG = {}".format(self.start_offset_dict["Ankle"],
+                                                                       self.start_offset_dict["Wrist"],
+                                                                       self.start_offset_dict["ECG"]))
+        print("Data points to be read: ankle = {}, wrist = {}, ECG = {}".format(self.end_offset_dict["Ankle"],
+                                                                                self.end_offset_dict["Wrist"],
+                                                                                self.end_offset_dict["ECG"]))
 
         # DATA IMPORT ------------------------------------------------------------------------------------------------
         if self.ecg_filepath is not None:
@@ -172,15 +199,20 @@ class Subject:
             self.ecg.epoch_intensity, self.ecg.intensity_totals = self.ecg.calculate_intensity()
 
         # Processing that is only run if more than one device is loaded ----------------------------------------------
-        # if self.load_wrist + self.load_ecg + self.load_ankle > 1:
+
+        # Validity check if ECG + at least one accelerometer is available
         if self.wrist_filepath is not None and self.ankle_filepath is not None:
             self.valid_all = None
             self.valid_accelonly = FindValidEpochs.AccelOnly(subject_object=self, write_results=self.write_results)
 
-        if self.load_wrist + self.load_ecg + self.load_ankle > 1:
+        # Validity check if multiple accelerometers and no ECG is available
+        if self.load_wrist + self.load_ecg + self.load_ankle > 1 and self.ecg_filepath is not None:
             # Creates subsets of data where only epochs where all data was valid are included
             self.valid_all = FindValidEpochs.AllDevices(subject_object=self, write_results=self.write_results)
+            self.valid_accelonly = None
 
+        # Runs stats if multiple devices available
+        if self.load_wrist + self.load_ecg + self.load_ankle > 1:
             # Runs statistical analysis
             self.stats = ModelStats.Stats(subject_object=self)
 
@@ -192,6 +224,7 @@ class Subject:
         print("======================================================================================================")
 
     def get_raw_filenames(self):
+        """Retrieves filenames associated with current subject."""
 
         subject_file_list = [i for i in os.listdir(self.raw_edf_folder) if ".EDF" in i and str(self.subjectID) in i]
         dom_hand = self.demographics["Hand"][0]
@@ -283,7 +316,8 @@ class Subject:
         ax3.xaxis.set_major_locator(locator)
         plt.xticks(rotation=45, fontsize=6)
 
-    def plot_total_activity(self, validity_object):
+    @staticmethod
+    def plot_total_activity(validity_object):
         """Generates barplots of total activity minutes for each model.
         """
 
@@ -348,7 +382,7 @@ class Subject:
                                                              vigorous_minutes[2], vigorous_minutes[3]))
 
     def plot_accel_ecg_quality(self):
-        """Plots raw ankle and wrist accelerometer data, raw ECG data, and ECG validity data."""
+        """Plots raw ankle and wrist accelerometer data, raw ECG data, and ECG validity status."""
 
         fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, sharex='col', figsize=(10, 7))
 
