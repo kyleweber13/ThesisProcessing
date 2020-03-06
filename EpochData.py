@@ -1,5 +1,6 @@
 from datetime import datetime
 import numpy as np
+import math
 
 
 class EpochAccel:
@@ -41,6 +42,13 @@ class EpochAccel:
         print("\n" + "Epoching using raw data...")
 
         self.timestamps = raw_data.timestamps[::self.epoch_len * raw_data.sample_rate]
+
+        try:
+            vm = raw_data.vm
+        except AttributeError:
+            # Calculates gravity-subtracted vector magnitude
+            raw_data.vm = [round(abs(math.sqrt(math.pow(raw_data.x[i], 2) + math.pow(raw_data.y[i], 2) +
+                                               math.pow(raw_data.z[i], 2)) - 1), 5) for i in range(len(raw_data.x))]
 
         # Calculates activity counts
         for i in range(0, len(raw_data.vm), int(raw_data.sample_rate * self.epoch_len)):
