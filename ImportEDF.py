@@ -36,17 +36,21 @@ class GENEActiv:
 
         t0 = datetime.now()  # Gets current time
 
-        print("=====================================================================================================")
         print("Importing {}...".format(self.filepath))
 
         # READS IN ACCELEROMETER DATA ================================================================================
         file = pyedflib.EdfReader(self.filepath)
 
         if self.end_offset != 0:
+            print("Importing file from index {} to {}...".format(self.start_offset, self.end_offset))
+
             self.x = file.readSignal(chn=0, start=self.start_offset, n=self.end_offset)
             self.y = file.readSignal(chn=1, start=self.start_offset, n=self.end_offset)
             self.z = file.readSignal(chn=2, start=self.start_offset, n=self.end_offset)
+
         if self.end_offset == 0:
+            print("Importing file from index {} to the end...".format(self.start_offset))
+
             self.x = file.readSignal(chn=0, start=self.start_offset)
             self.y = file.readSignal(chn=1, start=self.start_offset)
             self.z = file.readSignal(chn=2, start=self.start_offset)
@@ -102,7 +106,6 @@ class GENEActivTemperature:
 
         t0 = datetime.now()  # Gets current time
 
-        print("====================================================================================================")
         print("Importing {}...".format(self.filepath))
 
         # READS IN ACCELEROMETER DATA ================================================================================
@@ -173,8 +176,11 @@ class Bittium:
 
         # READS IN ECG DATA ===========================================================================================
         if self.end_offset == 0:
+            print("Importing file from index {} to the end...".format(self.start_offset))
             self.raw = file.readSignal(chn=0, start=self.start_offset)
+
         if self.end_offset != 0:
+            print("Importing file from index {} to {}...".format(self.start_offset, self.end_offset))
             self.raw = file.readSignal(chn=0, start=self.start_offset, n=self.end_offset)
 
         print("ECG data import complete.")
@@ -209,13 +215,15 @@ class Bittium:
 def check_file(filepath):
     """Calculates file duration with start and end times. Prints results to console."""
 
+    if filepath is None:
+        return None
+
     ecg_file = pyedflib.EdfReader(filepath)
     ecg_duration = ecg_file.getFileDuration()
     start_time = ecg_file.getStartdatetime()
     end_time = start_time + timedelta(seconds=ecg_file.getFileDuration())
 
-    print("=================================================================")
-    print(filepath)
+    print("\n", filepath)
     print("Start time: ", start_time)
     print("End time:", end_time)
     print("Duration: {} hours".format(round(ecg_duration/3600, 2)))
