@@ -11,9 +11,14 @@ class Stats:
 
         self.subject_object = subject_object
 
-        self.kappa = self.cohens_kappa()
+        if subject_object.valid_all is not None:
+            print("\n" + "ALL DEVICES")
+            self.kappa_all = self.cohens_kappa(subject_object.valid_all)
+        if subject_object.valid_accelonly is not None:
+            print("\n" + "ACCELEROMETER-ONLY DATA")
+            self.kappa_accelonly = self.cohens_kappa(subject_object.valid_accelonly)
 
-    def cohens_kappa(self):
+    def cohens_kappa(self, validity_data):
         """Calculates Cohen's kappa for all available model comparisons. Returns results in a dictionary.
 
         :argument
@@ -29,17 +34,17 @@ class Stats:
 
         # Creates data sets excluding Nones
         if self.subject_object.wrist_filepath is not None:
-            wrist = [i for i in self.subject_object.valid.wrist if i is not None]
+            wrist = [i for i in validity_data.wrist if i is not None]
         if self.subject_object.wrist_filepath is None:
             wrist = None
 
         if self.subject_object.ankle_filepath is not None:
-            ankle = [i for i in self.subject_object.valid.ankle if i is not None]
+            ankle = [i for i in validity_data.ankle if i is not None]
         if self.subject_object.ankle_filepath is None:
             ankle = None
 
         if self.subject_object.ecg_filepath is not None:
-            hr = [i for i in self.subject_object.valid.hr if i is not None]
+            hr = [i for i in validity_data.valid.hr if i is not None]
         if self.subject_object.ecg_filepath is None:
             hr = None
 
