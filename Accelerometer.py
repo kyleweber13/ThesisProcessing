@@ -20,7 +20,7 @@ import math
 
 class Wrist:
 
-    def __init__(self, filepath, output_dir, load_raw=False,
+    def __init__(self, filepath, output_dir, load_raw=False, accel_only=False,
                  epoch_len=15, start_offset=0, end_offset=0, ecg_object=None,
                  from_processed=True, processed_folder=None, write_results=False):
 
@@ -32,6 +32,7 @@ class Wrist:
         self.output_dir = output_dir
 
         self.load_raw = load_raw
+        self.accel_only = accel_only
 
         self.epoch_len = epoch_len
         self.start_offset = start_offset
@@ -48,7 +49,7 @@ class Wrist:
                                        start_offset=self.start_offset, end_offset=self.end_offset,
                                        load_raw=self.load_raw)
 
-        self.epoch = EpochData.EpochAccel(raw_data=self.raw,
+        self.epoch = EpochData.EpochAccel(raw_data=self.raw, accel_only=self.accel_only,
                                           from_processed=self.from_processed, processed_folder=processed_folder)
 
         # Model
@@ -61,14 +62,18 @@ class Wrist:
     def write_model(self):
         """Writes csv of epoched timestamps, counts, and intensity categorization to working directory."""
 
-        with open(self.output_dir + "Model Output/" + self.filename + "_IntensityData.csv", "w") as outfile:
+        if not self.accel_only:
+            out_filename = self.output_dir + "Model Output/" + self.filename + "_IntensityData.csv"
+        if self.accel_only:
+            out_filename = self.output_dir + "Model Output/" + self.filename + "_IntensityData_AccelOnly.csv"
+
+        with open(out_filename, "w") as outfile:
             writer = csv.writer(outfile, delimiter=',', lineterminator="\n")
 
             writer.writerow(["Timestamp", "ActivityCount", "IntensityCategory"])
             writer.writerows(zip(self.epoch.timestamps, self.epoch.svm, self.model.epoch_intensity))
 
-        print("\n" + "Complete. File {} saved.".format(self.output_dir + "Model Output/" +
-                                                       self.filename + "_IntensityData.csv"))
+        print("\n" + "Complete. File {} saved.".format(out_filename))
 
 
 class WristModel:
@@ -179,7 +184,7 @@ class WristModel:
 
 class Ankle:
 
-    def __init__(self, filepath=None, load_raw=False,
+    def __init__(self, filepath=None, load_raw=False, accel_only=False,
                  output_dir=None, rvo2=None, age=None, epoch_len=15,
                  start_offset=0, end_offset=0,
                  remove_baseline=False, ecg_object=None,
@@ -192,6 +197,7 @@ class Ankle:
         self.filepath = filepath
         self.filename = self.filepath.split("/")[-1].split(".")[0]
         self.load_raw = load_raw
+        self.accel_only = accel_only
         self.output_dir = output_dir
 
         self.subjectID = self.filename.split("_")[2]
@@ -216,7 +222,7 @@ class Ankle:
                                        load_raw=self.load_raw)
 
         self.epoch = EpochData.EpochAccel(raw_data=self.raw, epoch_len=self.epoch_len,
-                                          remove_baseline=self.remove_baseline,
+                                          remove_baseline=self.remove_baseline, accel_only=self.accel_only,
                                           from_processed=self.from_processed, processed_folder=processed_folder)
 
         # Create Treadmill object
@@ -527,6 +533,7 @@ class AnkleModel:
 
         self.epoch_data = ankle_object.epoch.svm
         self.epoch_len = ankle_object.epoch_len
+        self.accel_only = ankle_object.accel_only
         self.epoch_scale = 1
         self.epoch_timestamps = ankle_object.epoch.timestamps
         self.subjectID = ankle_object.subjectID
@@ -644,7 +651,7 @@ class AnkleModel:
         above_sed_thresh = []
 
         # Threshold corresponding to a 5-second walk at preferred speed
-        meaningful_threshold = self.tm_object.avg_walk_counts[2] / (self.epoch_len / 5)
+        meaningful_threshold = round(self.tm_object.avg_walk_counts[2] / (self.epoch_len / 5), 2)
 
         # Sets threshold to either meaningful_threshold OR light_counts based on which is greater
         if meaningful_threshold >= light_counts:
@@ -907,14 +914,18 @@ class AnkleModel:
 
     def write_anklemodel(self):
 
+        if not self.accel_only:
+            out_filename = self.anklemodel_outfile
+        if self.accel_only:
+            out_filename = self.output_dir + "Model Output/" + self.filename.split(".")[0].split("/")[-1] + \
+                           "_IntensityData_AccelOnly.csv"
+
         # Writes epoch-by-epoch data to .csv
-        with open(self.anklemodel_outfile, "w") as output:
+        with open(out_filename, "w") as output:
             writer = csv.writer(output, delimiter=",", lineterminator="\n")
 
-            writer.writerow(
-                ["Timestamp", "ActivityCount", "PredictedSpeed", "PredictedMETs", "IntensityCategory"])
+            writer.writerow(["Timestamp", "ActivityCount", "PredictedSpeed", "PredictedMETs", "IntensityCategory"])
             writer.writerows(zip(self.epoch_timestamps, self.epoch_data,
                                  self.linear_speed, self.predicted_mets, self.epoch_intensity))
 
-        print("\n" + "Complete. File {}".format(self.output_dir + "Model Output/" +
-                                                self.filename + "_IntensityData.csv"))
+        print("\n" + "Complete. File {}".format(out_filename))
