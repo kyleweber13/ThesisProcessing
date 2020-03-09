@@ -218,12 +218,14 @@ def check_file(filepath):
     if filepath is None:
         return None
 
-    ecg_file = pyedflib.EdfReader(filepath)
-    ecg_duration = ecg_file.getFileDuration()
-    start_time = ecg_file.getStartdatetime()
-    end_time = start_time + timedelta(seconds=ecg_file.getFileDuration())
+    edf_file = pyedflib.EdfReader(filepath)
+
+    ecg_duration = edf_file.getFileDuration()
+    start_time = edf_file.getStartdatetime()
+    end_time = start_time + timedelta(seconds=edf_file.getFileDuration())
 
     print("\n", filepath)
+    print("Sample rate: {}Hz".format(edf_file.getSampleFrequency(0)))
     print("Start time: ", start_time)
     print("End time:", end_time)
     print("Duration: {} hours".format(round(ecg_duration/3600, 2)))
