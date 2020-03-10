@@ -7,7 +7,8 @@ def import_crop_indexes(subject, crop_file):
     print()
     print("======================================= DEVICE SYNCHRONIZATION ======================================")
 
-    print("\n" + "Searching {} for existing file crop indexes for subject {}...".format(crop_file, subject))
+    print("\n" + "Searching {} for existing file ".format(crop_file))
+    print("crop indexes for subject {}...".format(subject))
     print()
 
     # Reads in .csv file
@@ -45,10 +46,7 @@ def import_crop_indexes(subject, crop_file):
                 end_offset_dict = {"Ankle": data[2], "Wrist": data[4], "ECG": data[6]}
                 crop_indexes_found = True
 
-    if crop_indexes_found:
-        print("Start offsets: ", start_offset_dict)
-        print("End offsets: ", end_offset_dict)
     if not crop_indexes_found:
-        print("No indexes found. Checking raw data files..." + "\n")
+        print("\n" + "No indexes found. Checking raw data files..." + "\n")
 
     return start_offset_dict, end_offset_dict, crop_indexes_found
