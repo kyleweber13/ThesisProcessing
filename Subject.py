@@ -109,6 +109,11 @@ class Subject:
 
         self.crop_indexes_found = False
 
+        # If only one device available
+        if self.load_ecg + self.load_wrist + self.load_ankle == 1:
+            self.start_offset_dict = {"Ankle": 0, "Wrist": 0, "ECG": 0}
+            self.end_offset_dict = {"Ankle": 0, "Wrist": 0, "ECG": 0}
+
         # If ECG and at least one accelerometer are available
         if self.ecg_filepath is not None and (self.wrist_filepath is not None or self.ankle_filepath is not None):
 
@@ -127,12 +132,12 @@ class Subject:
 
             # Reads from csv if available
             if self.crop_index_file is not None:
-                print("Crop file not entered/found. Ankle treadmill protocol indexes may be incorrect.")
                 self.start_offset_dict, self.end_offset_dict, self.crop_indexes_found = \
                     ImportCropIndexes.import_crop_indexes(subject=self.subjectID, crop_file=self.crop_index_file)
 
             # Reads from raw if participant not found in csv or csv does not exist
             if not self.crop_indexes_found:
+                print("Crop file not entered/found. Ankle treadmill protocol indexes may be incorrect.")
                 self.start_offset_dict = DeviceSync.crop_start(subject_object=self)
 
             # Overwrites end indexes with values from raw accel files (excludes ECG)
