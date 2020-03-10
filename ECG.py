@@ -280,7 +280,7 @@ class ECG:
 
         hr_max = 208 - 0.7 * self.age
 
-        perc_hrr = [100 * (hr - self.rest_hr) / (hr_max - self.rest_hr) if hr
+        perc_hrr = [round(100 * (hr - self.rest_hr) / (hr_max - self.rest_hr), 2) if hr
                     is not None else None for hr in self.valid_hr]
 
         # A single epoch's HR can be below resting HR based on how it's defined
