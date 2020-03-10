@@ -59,6 +59,7 @@ class ECG:
 
         self.filepath = filepath
         self.filename = self.filepath.split("/")[-1].split(".")[0]
+        self.subjectID = self.filename.split("_")[2]
         self.output_dir = output_dir
         self.age = age
         self.epoch_len = epoch_len
@@ -189,6 +190,8 @@ class ECG:
                           "Percent invalid": perc_invalid,
                           "Longest valid period": longest_valid, "Longest invalid period": longest_invalid,
                           "Average valid duration (minutes)": None}
+
+        print("{}% of the data is valid.".format(round(100-perc_invalid), 2))
 
         return quality_report
 
@@ -384,56 +387,82 @@ class ECG:
         plt.legend(loc='upper left')
         plt.show()
 
-    def plot_random_qc(self):
-        """Method that generates a random 10-minute sample of data. Overlays filtered data with quality check output."""
+    def plot_random_qc(self, input_index=None):
+        """Method that generates a random 10-minute sample of data. Overlays filtered data with quality check output.
+
+        :argument
+        -start_index: able to input desired start index. If None, randomly generated
+        """
 
         # Generates random start index
-        start_index = randint(0, len(self.filtered) - 15 * 60 * self.sample_rate)
+        if input_index is not None:
+            start_index = input_index
+        if input_index is None:
+            start_index = randint(0, len(self.filtered) - self.epoch_len * self.sample_rate)
 
         # Rounds random start to an index that corresponds to start of an epoch
         start_index -= start_index % (self.epoch_len * self.sample_rate)
 
-        # End index: 15-minute window
-        end_index = start_index + 15 * 60 * self.sample_rate
+        print("\n" + "Index {}.".format(start_index))
 
-        # Epoch start index
-        epoch_start = int(start_index / self.epoch_len / self.sample_rate)
-        epoch_end = epoch_start + int(15 * 60 / self.epoch_len)
+        # End index: one epoch
+        end_index = start_index + self.epoch_len * self.sample_rate
 
         # Data point index converted to seconds
-        seconds_seq_raw = np.arange(0, 15 * 60 * self.sample_rate) / self.sample_rate
-        seconds_seq_epoch = np.arange(0, 15 * 60, self.epoch_len)
+        seconds_seq_raw = np.arange(0, self.epoch_len * self.sample_rate) / self.sample_rate
+
+        # Epoch's quality check
+        validity_data = CheckQuality(ecg_object=self, start_index=start_index, epoch_len=self.epoch_len)
+
+        print()
+        print("Valid HR: {} (passed {}/5 conditions)".format(validity_data.rule_check_dict["Valid Period"],
+                                                             validity_data.rule_check_dict["HR Valid"] +
+                                                             validity_data.rule_check_dict["Max RR Interval Valid"] +
+                                                             validity_data.rule_check_dict["RR Ratio Valid"] +
+                                                             validity_data.rule_check_dict["Voltage Range Valid"] +
+                                                             validity_data.rule_check_dict["Correlation Valid"]))
+
+        print("-HR range ({} bpm): {}".format(validity_data.rule_check_dict["HR"],
+                                              validity_data.rule_check_dict["HR Valid"]))
+        print("-Max RR interval ({} sec): {}".format(validity_data.rule_check_dict["Max RR Interval"],
+                                                     validity_data.rule_check_dict["Max RR Interval Valid"]))
+        print("-RR ratio ({}): {}".format(validity_data.rule_check_dict["RR Ratio"],
+                                          validity_data.rule_check_dict["RR Ratio Valid"]))
+        print("-Voltage range ({} uV): {}".format(validity_data.rule_check_dict["Voltage Range"],
+                                                  validity_data.rule_check_dict["Voltage Range Valid"]))
+        print("-Correlation (r={}): {}".format(validity_data.rule_check_dict["Correlation"],
+                                               validity_data.rule_check_dict["Correlation Valid"]))
 
         # Plot
-        fig, (ax1, ax2, ax3) = plt.subplots(3, sharex='col', figsize=(10, 7))
+        fig, (ax1, ax2) = plt.subplots(2, sharex='col', figsize=(10, 7))
 
-        ax1.set_title("Participant {}: Random Quality Check Sample (Index = {})".format(self.filename, start_index))
+        valid_period = "Valid" if validity_data.rule_check_dict["Valid Period"] else "Invalid"
+
+        ax1.set_title("Participant {}: {} (index = {})".format(self.subjectID, valid_period, start_index))
 
         # Filtered ECG data
-        ax1.plot(seconds_seq_raw, self.filtered[start_index:end_index], color='red', label="Filtered ECG")
+        ax1.plot(seconds_seq_raw, self.filtered[start_index:end_index], color='black', label="Filtered ECG")
+        ax1.plot(validity_data.r_peaks/self.sample_rate,
+                 [self.filtered[start_index+peak] for peak in validity_data.r_peaks],
+                 linestyle="", marker="x", color='green')
         ax1.set_ylabel("Voltage")
         ax1.legend(loc='upper left')
 
         # Filtered ECG data
         ax2.plot(seconds_seq_raw, self.raw[start_index:end_index], color='red', label="Raw ECG")
+        ax2.plot(validity_data.r_peaks/self.sample_rate,
+                 [self.raw[start_index+peak] for peak in validity_data.r_peaks],
+                 linestyle="", marker="x", color='black')
         ax2.set_ylabel("Voltage")
         ax2.legend(loc='upper left')
 
-        ax3.set_xlabel("Seconds")
+        ax2.set_xlabel("Seconds")
 
-        print("\n" + "Showing index {}.".format(start_index))
-
-        # Epoched QC data
-        try:
-            word_data = ["Valid" if i == 0 else "Invalid" for i in self.epoch_validity[epoch_start:epoch_end]]
-            ax3.bar(seconds_seq_epoch, word_data,
-                    width=self.epoch_len, align="edge", edgecolor='black', color='grey')
-
-            # ax3.set_yticklabels(["Valid", "Invalid"], minor=False)
-            ax3.plot()
-
-        except TypeError:
-            pass
+        # Turns background green if valid
+        if valid_period == "Valid":
+            ax1.fill_between(x=seconds_seq_raw,
+                             y1=min(self.filtered[start_index:end_index]),
+                             y2=max(self.filtered[start_index:end_index]), color='green', alpha=0.1)
 
     def write_output(self):
         """Writes csv of epoched timestamps, validity category."""
@@ -481,6 +510,13 @@ class CheckQuality:
         self.raw_data = ecg_object.raw[self.start_index:self.start_index+self.epoch_len*self.fs]
         self.filt_data = ecg_object.filtered[self.start_index:self.start_index+self.epoch_len*self.fs]
         self.index_list = np.arange(0, len(self.raw_data), self.epoch_len*self.fs)
+
+        self.rule_check_dict = {"Valid Period": None,
+                                "HR Valid": None, "HR": None,
+                                "Max RR Interval Valid": None, "Max RR Interval": None,
+                                "RR Ratio Valid": None, "RR Ratio": None,
+                                "Voltage Range Valid": None, "Voltage Range": None,
+                                "Correlation Valid": None, "Correlation": None}
 
         # prep_data parameters
         self.r_peaks = None
@@ -665,10 +701,10 @@ class CheckQuality:
         # should be less than 2.5"
         self.rr_ratio = max(self.delta_rr) / min(self.delta_rr)
 
-        if self.rr_ratio >= 2.5:
+        if self.rr_ratio >= 3:
             self.valid_ratio = False
 
-        if self.rr_ratio < 2.5:
+        if self.rr_ratio < 3:
             self.valid_ratio = True
 
         # Rule 4: the range of the raw ECG signal needs to be >= 250 microV ------------------------------------------
@@ -690,3 +726,10 @@ class CheckQuality:
             self.valid_period = True
         else:
             self.valid_period = False
+
+        self.rule_check_dict = {"Valid Period": self.valid_period,
+                                "HR Valid": self.valid_hr, "HR": round(self.hr, 1),
+                                "Max RR Interval Valid": self.valid_rr, "Max RR Interval": round(max(self.delta_rr), 1),
+                                "RR Ratio Valid": self.valid_ratio, "RR Ratio": round(self.rr_ratio, 1),
+                                "Voltage Range Valid": self.valid_range, "Voltage Range": round(self.volt_range, 1),
+                                "Correlation Valid": self.valid_corr, "Correlation": self.average_r}
