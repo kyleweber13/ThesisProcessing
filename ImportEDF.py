@@ -56,8 +56,7 @@ class GENEActiv:
             self.z = file.readSignal(chn=2, start=self.start_offset)
 
         # Calculates gravity-subtracted vector magnitude
-        self.vm = [round(abs(math.sqrt(math.pow(self.x[i], 2) + math.pow(self.y[i], 2) +
-                                       math.pow(self.z[i], 2)) - 1), 5) for i in range(len(self.x))]
+        self.vm = np.sqrt(np.square(np.array([self.x, self.y, self.z])).sum(axis=0)) - 1
 
         self.sample_rate = file.getSampleFrequencies()[1]  # sample rate
         self.starttime = file.getStartdatetime() + timedelta(seconds=self.start_offset/self.sample_rate)
