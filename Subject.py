@@ -5,7 +5,7 @@ import DeviceSync
 import SleepLog
 import NonWearLog
 import ModelStats
-import FindValidEpochs
+import ValidData
 import ImportCropIndexes
 import ImportEDF
 
@@ -213,12 +213,12 @@ class Subject:
         # Validity check if ECG + at least one accelerometer is available
         if self.wrist_filepath is not None and self.ankle_filepath is not None:
             self.valid_all = None
-            self.valid_accelonly = FindValidEpochs.AccelOnly(subject_object=self, write_results=self.write_results)
+            self.valid_accelonly = ValidData.AccelOnly(subject_object=self, write_results=self.write_results)
 
         # Validity check if multiple accelerometers and no ECG is available
         if self.load_wrist + self.load_ecg + self.load_ankle > 1 and self.ecg_filepath is not None:
             # Creates subsets of data where only epochs where all data was valid are included
-            self.valid_all = FindValidEpochs.AllDevices(subject_object=self, write_results=self.write_results)
+            self.valid_all = ValidData.AllDevices(subject_object=self, write_results=self.write_results)
             self.valid_accelonly = None
 
         # Runs stats if multiple devices available
@@ -326,10 +326,19 @@ class Subject:
         ax3.xaxis.set_major_locator(locator)
         plt.xticks(rotation=45, fontsize=6)
 
-    @staticmethod
-    def plot_total_activity(validity_object):
+    def plot_total_activity(self, validity_object):
         """Generates barplots of total activity minutes for each model.
         """
+
+        def autolabel(rects, valid_time):
+            """Attach a text label above each bar in *rects*, displaying its height."""
+            for rect in rects:
+                height = rect.get_height()
+                plt.annotate('{}'.format(round(height / 100 * 60 * valid_time, 1)),
+                             xy=(rect.get_x() + rect.get_width() / 2, height),
+                             xytext=(0, 3),  # 3 points vertical offset
+                             textcoords="offset points",
+                             ha='center', va='bottom')
 
         # 0s are placeholders for Hr-Acc model
         sedentary_minutes = [validity_object.wrist_totals["Sedentary"],
@@ -353,28 +362,53 @@ class Subject:
                             0]
 
         plt.subplots(2, 2, figsize=(10, 7))
+        plt.suptitle("Participant {}: Valid Only Data (bar labels are minutes)".format(self.subjectID))
 
         # Sedentary activity
         plt.subplot(2, 2, 1)
         plt.title("Sedentary")
-        plt.bar(["Wrist", "Ankle", "HR", "HR-Acc"], sedentary_minutes, color='grey', edgecolor='black')
-        plt.ylabel("Minutes")
+        sed_plot = plt.bar(["Wrist", "Ankle", "HR", "HR-Acc"],
+                           [i / 60 / validity_object.validity_dict["Total Hours Valid"] *
+                            100 for i in sedentary_minutes],
+                           color='grey', edgecolor='black')
+        autolabel(sed_plot, validity_object.validity_dict["Total Hours Valid"])
+        plt.ylim(0, max([i / 60 / validity_object.validity_dict["Total Hours Valid"] *
+                         100 for i in sedentary_minutes]) * 1.2)
+        plt.ylabel("% of valid time")
 
         # Light activity
         plt.subplot(2, 2, 2)
         plt.title("Light Activity")
-        plt.bar(["Wrist", "Ankle", "HR", "HR-Acc"], light_minutes, color='green', edgecolor='black')
+        light_plot = plt.bar(["Wrist", "Ankle", "HR", "HR-Acc"],
+                             [i / 60 / validity_object.validity_dict["Total Hours Valid"] *
+                              100 for i in light_minutes],
+                             color='green', edgecolor='black')
+        plt.ylim(0, max([i / 60 / validity_object.validity_dict["Total Hours Valid"] *
+                         100 for i in light_minutes]) * 1.2)
+        autolabel(light_plot, validity_object.validity_dict["Total Hours Valid"])
 
         # Moderate activity
         plt.subplot(2, 2, 3)
         plt.title("Moderate Activity")
-        plt.bar(["Wrist", "Ankle", "HR", "HR-Acc"], moderate_minutes, color='#EA5B19', edgecolor='black')
-        plt.ylabel("Minutes")
+        mod_plot = plt.bar(["Wrist", "Ankle", "HR", "HR-Acc"],
+                           [i / 60 / validity_object.validity_dict["Total Hours Valid"] *
+                            100 for i in moderate_minutes],
+                           color='#EA5B19', edgecolor='black')
+        plt.ylim(0, max([i / 60 / validity_object.validity_dict["Total Hours Valid"] *
+                         100 for i in moderate_minutes]) * 1.2)
+        autolabel(mod_plot, validity_object.validity_dict["Total Hours Valid"])
+        plt.ylabel("% of valid time")
 
         # Vigorous activity
         plt.subplot(2, 2, 4)
         plt.title("Vigorous Activity")
-        plt.bar(["Wrist", "Ankle", "HR", "HR-Acc"], vigorous_minutes, color='red', edgecolor='black')
+        vig_plot = plt.bar(["Wrist", "Ankle", "HR", "HR-Acc"],
+                           [i / 60 / validity_object.validity_dict["Total Hours Valid"] *
+                            100 for i in vigorous_minutes],
+                           color='red', edgecolor='black')
+        plt.ylim(0, max([i / 60 / validity_object.validity_dict["Total Hours Valid"] *
+                         100 for i in vigorous_minutes]) * 1.2)
+        autolabel(vig_plot, validity_object.validity_dict["Total Hours Valid"])
 
         print()
         print("========================================= TOTAL ACTIVITY SUMMARY =====================================")
