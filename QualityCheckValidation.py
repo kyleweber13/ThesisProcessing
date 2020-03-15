@@ -77,7 +77,7 @@ def qc_check(raw_edf_folder='/Users/kyleweber/Desktop/Data/OND07/EDF/', output_f
     return ecg_object, output_data, user_entry
 
 
-def qc_check_repeat(results_file, repeats_file, output_file, raw_edf_folder, assessor_initials=None):
+def qc_check_repeat(results_file, repeats_file, raw_edf_folder, assessor_initials=None):
 
     # INPUT DATA - ALREADY PROCESSED ----------------------------------------------------------------------------------
     input_data = pandas.read_excel(io=results_file, header=0, index_col=None, sheet_name="QualityControl_Testing",
@@ -86,28 +86,31 @@ def qc_check_repeat(results_file, repeats_file, output_file, raw_edf_folder, ass
     # Creates list of format id_index for each row
     input_sections = [str(id) + "_" + str(index) for id, index in zip(input_data["ID"], input_data["Index"])]
 
-    # INPUT DATA FROM SECOND TESTER
+    # INPUT DATA FROM SECOND TESTER -----------------------------------------------------------------------------------
     repeated_data = pandas.read_csv(filepath_or_buffer=repeats_file, delimiter=",", usecols=[0, 1, 2, 3])
     repeat_sections = [str(id) + "_" + str(index) for id, index in zip(repeated_data["ID"], repeated_data["Index"])]
 
+    # Removes repeated values from input_sections
     for sect in repeat_sections:
         if sect in input_sections:
             input_sections.remove(sect)
 
-    for sect in input_sections[0:2]:
-        ecg, data, result = qc_check(raw_edf_folder=raw_edf_folder, output_file=output_file,
+    # Runs quality check for non-repeated sections
+    for sect in input_sections:
+        ecg, data, result = qc_check(raw_edf_folder=raw_edf_folder, output_file=None,
                                      subject_num=int(sect[0:4]), start=int(sect.split("_")[1]), write_results=False)
-        with open(output_file, "a") as outfile:
+
+        # Appends results to output_file
+        with open(repeats_file, "a") as outfile:
             writer = csv.writer(outfile, lineterminator="\n", delimiter=",")
             writer.writerow([assessor_initials, sect[0:4], sect.split("_")[1], result])
         print("Result saved.")
 
 
-qc_check_repeat(results_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/QualityControl_Testing.xlsx",
-                repeats_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/QualityControl_Output_Repeats.csv",
+qc_check_repeat(results_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/QualityControl_Testing_KW.xlsx",
+                repeats_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/QualityControl_Testing_Repeats.csv",
                 raw_edf_folder='/Users/kyleweber/Desktop/Data/OND07/EDF/',
-                output_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/QualityControl_Output.csv",
-                assessor_initials="XX")
+                assessor_initials="KK")
 
 
 class AnalyzeResults:
