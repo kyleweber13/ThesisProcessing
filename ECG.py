@@ -12,6 +12,7 @@ import csv
 import progressbar
 from matplotlib.ticker import PercentFormatter
 from random import randint
+import time
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -299,6 +300,26 @@ class ECG:
 
         return perc_hrr_final
 
+    def hr_to_perchrr(self, hr):
+        """Calculates a HR as a percent of HRR."""
+
+        net_hr = hr - self.rest_hr
+        hrr = (208 - 0.7 * self.age) - self.rest_hr
+
+        hrr_percent = round(100 * (net_hr / hrr), 1)
+
+        return hrr_percent
+
+    def perchrr_to_hr(self, perc_hrr):
+        """Calculates percent HRR as a raw HR (bpm)"""
+
+        hrr = (208 - 0.7 * self.age) - self.rest_hr
+
+        hr = round(perc_hrr * hrr / 100 + self.rest_hr, 1)
+
+        return hr
+
+
     def calculate_intensity(self):
         """Calculates intensity category based on %HRR ranges.
            Sums values to determine total time spent in each category.
@@ -369,7 +390,7 @@ class ECG:
         n_bins = np.arange(40, 180, 5)
 
         plt.figure(figsize=(10, 7))
-        plt.hist(valid_heartrates, weights=np.ones(len(valid_heartrates)) / len(valid_heartrates), bins=n_bins,
+        plt.hist(x=valid_heartrates, weights=np.ones(len(valid_heartrates)) / len(valid_heartrates), bins=n_bins,
                  edgecolor='black', color='grey')
         plt.axvline(x=avg_hr, color='red', linestyle='dashed', label="Average HR ({} bpm)".format(round(avg_hr, 1)))
         plt.axvline(x=self.rest_hr, color='green', linestyle='dashed',
@@ -456,10 +477,10 @@ class ECG:
         ax2.set_xlabel("Seconds")
 
         # Turns background green if valid
-        if valid_period == "Valid":
+        """if valid_period == "Valid":
             ax1.fill_between(x=seconds_seq_raw,
                              y1=min(self.filtered[start_index:end_index]),
-                             y2=max(self.filtered[start_index:end_index]), color='green', alpha=0.1)
+                             y2=max(self.filtered[start_index:end_index]), color='green', alpha=0.1)"""
 
         return validity_data
 
@@ -732,50 +753,3 @@ class CheckQuality:
                                 "RR Ratio Valid": self.valid_ratio, "RR Ratio": round(self.rr_ratio, 1),
                                 "Voltage Range Valid": self.valid_range, "Voltage Range": round(self.volt_range, 1),
                                 "Correlation Valid": self.valid_corr, "Correlation": self.average_r}
-
-
-def plot_totally_random_qc(raw_edf_folder='/Users/kyleweber/Desktop/Data/OND07/EDF/', epoch_len=15, sample_rate=250):
-    """Imports a random segment of a random ECG file, runs the quality check algorithm on it, plots the raw and
-       filtered data, and appends the quality check results to a .csv file.
-    """
-
-    plt.close()
-
-    print("\n" + "Plotting random section of data from random participant...")
-
-    subjectID = randint(3002, 3037)
-
-    ecg_filepath = raw_edf_folder + "OND07_WTL_{}_01_BF.EDF".format(subjectID)
-
-    print("Using file {}".format(ecg_filepath))
-
-    file_start, file_end = ImportEDF.check_file(ecg_filepath, print_summary=False)
-    file_duration = ((file_end - file_start).days * 86400 + (file_end - file_start).seconds) * 250
-
-    start_index = randint(0, file_duration - epoch_len * sample_rate)
-    start_index -= start_index % (sample_rate * epoch_len)
-
-    print("Testing index {}-{} ({}-second window).".format(start_index, start_index + epoch_len * sample_rate,
-                                                           epoch_len))
-
-    ecg_object = ECG(filepath=ecg_filepath, age=0, start_offset=start_index, end_offset=epoch_len*sample_rate,
-                     epoch_len=15,
-                     load_raw=True, from_processed=False, write_results=False)
-
-    ecg_object.subjectID = subjectID
-
-    validity_data = ECG.plot_random_qc(self=ecg_object, input_index=0).rule_check_dict
-
-    output_data = [subjectID, start_index,
-                   validity_data["Valid Period"],
-                   validity_data["HR Valid"], validity_data["HR"],
-                   validity_data["Max RR Interval Valid"], validity_data["Max RR Interval"],
-                   validity_data["RR Ratio Valid"], validity_data["RR Ratio"],
-                   validity_data["Voltage Range Valid"], validity_data["Voltage Range"],
-                   validity_data["Correlation Valid"], validity_data["Correlation"]]
-
-    with open("/Users/kyleweber/Desktop/QualityControl_Testing.csv", "a") as outfile:
-        writer = csv.writer(outfile, lineterminator="\n", delimiter=",")
-        writer.writerow(output_data)
-
-    return ecg_object, output_data
