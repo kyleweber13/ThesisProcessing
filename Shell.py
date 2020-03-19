@@ -1,7 +1,9 @@
 from Subject import Subject
 import ModelStats
-import FindValidEpochs
+import ValidData
 import ImportEDF
+import HRAccTesting
+import LocateUsableParticipants
 
 import os
 import csv
@@ -15,36 +17,28 @@ register_matplotlib_converters()
 warnings.filterwarnings("ignore")
 
 
+usable_subjs = LocateUsableParticipants.find_usable(check_file="/Users/kyleweber/Desktop/Data/OND07/"
+                                                               "Tabular Data/OND07_ProcessingStatus.xlsx",
+                                                    require_ecg=True, require_wrist=False, require_ankle=False,
+                                                    require_all=False, require_ecg_and_one_accel=False,
+                                                    require_ecg_and_ankle=False)
+
 x = Subject(raw_edf_folder="/Users/kyleweber/Desktop/Data/OND07/EDF/",
-            subjectID=3030,
+            subjectID=3043,
             load_ecg=True, load_ankle=True, load_wrist=True,
-            load_raw_ecg=True, load_raw_ankle=True, load_raw_wrist=True,
-            from_processed=False,
+            load_raw_ecg=False, load_raw_ankle=False, load_raw_wrist=False,
+
+            from_processed=True,
+
             rest_hr_window=30,
             n_epochs_rest_hr=30,
+            hracc_threshold=30,
+
             filter_ecg=True,
             epoch_len=15,
-            crop_index_file="/Users/kyleweber/Desktop/Data/OND07/CropIndexes_All.csv",
-            treadmill_log_file="/Users/kyleweber/Desktop/Data/OND07/Treadmill_Log.csv",
-            demographics_file="/Users/kyleweber/Desktop/Data/OND07/Participant Information/Demographics_Data.csv",
-            sleeplog_folder="/Users/kyleweber/Desktop/Data/OND07/Sleep Logs/",
+            crop_index_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/CropIndexes_All.csv",
+            treadmill_log_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/Treadmill_Log.csv",
+            demographics_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/Demographics_Data.csv",
+            sleeplog_folder="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/",
             output_dir="/Users/kyleweber/Desktop/Data/OND07/Processed Data/",
-            write_results=False,
-            plot_data=False)
-
-
-x.valid = FindValidEpochs.ValidData(subject_object=x, write_results=x.write_results)
-x.stats = ModelStats.Stats(subject_object=x)
-"""x.valid.write_validity_report()
-x.valid.write_valid_epochs()
-
-x.ankle.treadmill.plot_treadmill_protocol(x.ankle)
-x.valid.plot_validity_data()"""
-
-"""x.wrist.write_model()
-x.ankle.model.write_anklemodel()
-x.ecg.write_output()"""
-
-w_start, w_end = ImportEDF.check_file(x.wrist_filepath)
-a_start, a_end = ImportEDF.check_file(x.ankle_filepath)
-e_start, e_end = ImportEDF.check_file(x.ecg_filepath)
+            write_results=False)
