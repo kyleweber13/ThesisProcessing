@@ -447,6 +447,8 @@ class Treadmill:
                 # Sets raw start index to 10 minutes prior to start of protocol
                 raw_start = (ankle_object.treadmill.walk_indexes[0] - 5 * ankle_object.epoch_len) * \
                             ankle_object.raw.sample_rate * ankle_object.epoch_len
+                if raw_start < 0:
+                    raw_start = 0
 
             # If StartIndex is N/A...
             try:
