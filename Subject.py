@@ -8,6 +8,7 @@ import ModelStats
 import ValidData
 import ImportCropIndexes
 import ImportEDF
+import HRAcc
 
 import os
 import matplotlib.pyplot as plt
@@ -29,7 +30,7 @@ class Subject:
                  load_wrist=False, load_ankle=False, load_ecg=False,
                  load_raw_ecg=False, load_raw_ankle=False, load_raw_wrist=False,
                  epoch_len=15, remove_epoch_baseline=False,
-                 rest_hr_window=60, n_epochs_rest_hr=10,
+                 rest_hr_window=60, n_epochs_rest_hr=10, hracc_threshold=30,
                  crop_index_file=None, filter_ecg=False, plot_data=False,
                  output_dir=None,
                  write_results=False, treadmill_log_file=None,
@@ -45,7 +46,7 @@ class Subject:
         self.wrist = None
         self.ankle = None
         self.ecg = None
-        self.hracc = None  # Model not yet made
+        self.hr_acc = None
 
         self.subjectID = subjectID
         self.raw_edf_folder = raw_edf_folder
@@ -84,6 +85,7 @@ class Subject:
         self.remove_epoch_baseline = remove_epoch_baseline
         self.rest_hr_window = rest_hr_window
         self.n_epochs_rest_hr = n_epochs_rest_hr
+        self.hracc_threshold = hracc_threshold
 
         self.from_processed = from_processed
 
@@ -207,6 +209,10 @@ class Subject:
 
             self.ecg.perc_hrr = self.ecg.calculate_percent_hrr()
             self.ecg.epoch_intensity, self.ecg.intensity_totals = self.ecg.calculate_intensity()
+
+        # HR-Acc Model -----------------------------------------------------------------------------------------------
+        if self.ankle_filepath is not None and self.ecg_filepath is not None:
+            self.hr_acc = HRAcc.HRAcc(subject_object=self, hrr_threshold=self.hracc_threshold)
 
         # Processing that is only run if more than one device is loaded ----------------------------------------------
 
@@ -344,22 +350,22 @@ class Subject:
         sedentary_minutes = [validity_object.wrist_totals["Sedentary"],
                              validity_object.ankle_totals["Sedentary"],
                              validity_object.hr_totals["Sedentary"],
-                             0]
+                             validity_object.hracc_totals["Sedentary"]]
 
         light_minutes = [validity_object.wrist_totals["Light"],
                          validity_object.ankle_totals["Light"],
                          validity_object.hr_totals["Light"],
-                         0]
+                         validity_object.hracc_totals["Light"]]
 
         moderate_minutes = [validity_object.wrist_totals["Moderate"],
                             validity_object.ankle_totals["Moderate"],
                             validity_object.hr_totals["Moderate"],
-                            0]
+                            validity_object.hracc_totals["Moderate"]]
 
         vigorous_minutes = [validity_object.wrist_totals["Vigorous"],
                             validity_object.ankle_totals["Vigorous"],
                             validity_object.hr_totals["Vigorous"],
-                            0]
+                            validity_object.hracc_totals["Vigorous"]]
 
         plt.subplots(2, 2, figsize=(10, 7))
         plt.suptitle("Participant {}: Valid Only Data (bar labels are minutes)".format(self.subjectID))
@@ -464,3 +470,38 @@ class Subject:
         ax4.xaxis.set_major_formatter(xfmt)
         ax4.xaxis.set_major_locator(locator)
         plt.xticks(rotation=45, fontsize=6)
+
+    def plot_treadmill_protocol(self):
+
+        if not self.load_ankle:
+            print("No ankle data available.")
+
+        if self.load_ankle:
+
+            fig, (ax1, ax2, ax3) = plt.subplots(3, sharex='col')
+
+            start_index = int(self.ankle.treadmill.walk_indexes[0] - 5 * (60 / self.epoch_len))
+            if start_index < 0:
+                start_index = 0
+
+            end_index = int(self.ankle.treadmill.walk_indexes[-1] + 5 * (60 / self.epoch_len))
+
+            plt.suptitle("Participant {}: HR and Accel Data during Treadmill Protocol".format(self.subjectID))
+
+            if self.wrist_filepath is not None:
+                ax1.plot(self.wrist.epoch.timestamps[start_index:end_index],
+                         self.wrist.epoch.svm[start_index:end_index], label="Wrist", color='black')
+                ax1.set_ylabel("Counts")
+                ax1.legend(loc='upper left')
+
+            ax2.plot(self.ankle.epoch.timestamps[start_index:end_index],
+                     self.ankle.epoch.svm[start_index:end_index], label="Ankle", color='black')
+            ax2.set_ylabel("Counts")
+            ax2.legend(loc='upper left')
+
+            if self.load_ecg:
+                ax3.plot(self.ecg.epoch_timestamps[start_index:end_index],
+                         self.ecg.epoch_hr[start_index:end_index], label="HR", color='red')
+                ax3.set_ylabel("HR (bpm)")
+
+            plt.show()
