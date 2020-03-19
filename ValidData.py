@@ -8,7 +8,7 @@ import scipy.stats
 
 class AllDevices:
 
-    def __init__(self, subject_object=None, write_results=True):
+    def __init__(self, subject_object=None, write_results=False):
         """Generates a class instance that creates and stores data where all devices/models generated valid data.
            Removes periods of invalid ECG data, sleep, and non-wear (NOT CURRENTLY IMPLEMENTED)"""
 
@@ -132,8 +132,9 @@ class AllDevices:
                 self.subject_object.ecg.epoch_validity is not None else None
 
         # HR-Acc intensity data
-        self.hracc_intensity = self.subject_object.hracc.model.epoch_intensity if \
-            self.subject_object.hracc is not None else None  # UPDATE THIS ONCE IT EXISTS
+        if self.subject_object.ecg_filepath is not None and self.subject_object.ankle_filepath is not None:
+            self.hracc_intensity = self.subject_object.hr_acc.model.epoch_intensity if \
+                self.subject_object.hr_acc is not None else None
 
         # Sleep validity data
         if self.subject_object.sleeplog_folder is not None:
@@ -191,26 +192,40 @@ class AllDevices:
         if self.hr_intensity is not None and self.hr is not None:
             self.hr = [self.hr[i] if self.sleep_validity[i] == 0 else None for i in range(self.data_len)]
 
+        # HR-ACC -----------------------------------------------------------------------------------------------------
+        if self.hracc_intensity is not None:
+            self.hr_acc = [self.hracc_intensity[i] if self.sleep_validity[i] == 0 else None
+                           for i in range(self.data_len)]
+
         print("Complete.")
 
     def generate_validity_report(self):
 
         try:
             self.percent_valid = round(100 * (self.data_len - self.ankle.count(None)) / self.data_len, 1)
+
             self.hours_valid = round((len(self.ankle) * self.subject_object.epoch_len / 3600) *
                                      (self.percent_valid / 100), 2)
+
             self.final_epoch_validity = ["Invalid" if i is None else "Valid" for i in self.ankle]
+
         except (TypeError, AttributeError):
+
             try:
                 self.percent_valid = round(100 * (self.data_len - self.wrist.count(None)) / self.data_len, 1)
+
                 self.hours_valid = round((len(self.wrist) * self.subject_object.epoch_len / 3600) *
                                          (self.percent_valid / 100), 2)
+
                 self.final_epoch_validity = ["Invalid" if i is None else "Valid" for i in self.wrist]
 
             except (TypeError, AttributeError):
+
                 self.percent_valid = round(100 * (self.data_len - self.hr.count(None)) / self.data_len, 1)
+
                 self.hours_valid = round((len(self.hr) * self.subject_object.epoch_len / 3600) *
                                          (self.percent_valid / 100), 2)
+
                 self.final_epoch_validity = ["Invalid" if i is None else "Valid" for i in self.hr]
 
             self.hours_valid = round(self.final_epoch_validity.count("Valid") * self.subject_object.epoch_len / 3600, 2)
@@ -405,6 +420,13 @@ class AllDevices:
                                  "Vigorous": self.ankle.count(3) / epoch_to_minutes,
                                  "Vigorous%": round(self.ankle.count(3) / n_valid_epochs, 3)}
 
+        if self.ankle is None:
+            self.ankle_totals = {"Model": "Ankle",
+                                 "Sedentary": 0, "Sedentary%": 0,
+                                 "Light": 0, "Light%": 0,
+                                 "Moderate": 0, "Moderate%": 0,
+                                 "Vigorous": 0, "Vigorous%": 0}
+
         # WRIST -------------------------------------------------------------------------------------------------------
         if self.wrist is not None:
             epoch_to_minutes = 60 / self.subject_object.wrist.epoch_len
@@ -420,6 +442,13 @@ class AllDevices:
                                  "Moderate%": round(self.wrist.count(2) / n_valid_epochs, 3),
                                  "Vigorous": self.wrist.count(3) / epoch_to_minutes,
                                  "Vigorous%": round(self.wrist.count(3) / n_valid_epochs, 3)}
+
+            if self.wrist is None:
+                self.wrist_totals = {"Model": "Wrist",
+                                     "Sedentary": 0, "Sedentary%": 0,
+                                     "Light": 0, "Light%": 0,
+                                     "Moderate": 0, "Moderate%": 0,
+                                     "Vigorous": 0, "Vigorous%": 0}
 
         # HEART RATE --------------------------------------------------------------------------------------------------
         if self.hr is not None:
@@ -437,9 +466,16 @@ class AllDevices:
                               "Vigorous": self.hr.count(3) / epoch_to_minutes,
                               "Vigorous%": round(self.hr.count(3) / n_valid_epochs, 3)}
 
+        if self.hr is None:
+            self.hr_totals = {"Model": "HR",
+                              "Sedentary": 0, "Sedentary%": 0,
+                              "Light": 0, "Light%": 0,
+                              "Moderate": 0, "Moderate%": 0,
+                              "Vigorous": 0, "Vigorous%": 0}
+
         # HR-ACC ------------------------------------------------------------------------------------------------------
         if self.hr_acc is not None:
-            epoch_to_minutes = 60 / self.subject_object.hracc.epoch_len
+            epoch_to_minutes = 60 / self.subject_object.hr_acc.epoch_len
 
             n_valid_epochs = len(self.hr_acc) - self.hr_acc.count(None)
 
@@ -466,11 +502,15 @@ class AllDevices:
             writer.writeheader()
             if self.subject_object.ankle is not None:
                 writer.writerow(self.ankle_totals)
+
             if self.subject_object.wrist is not None:
                 writer.writerow(self.wrist_totals)
+
             if self.subject_object.ecg is not None:
                 writer.writerow(self.hr_totals)
-            # writer.writerow(self.hracc_totals)
+
+            if self.subject_object.ankle is not None and self.subject_object.ecg is not None:
+                writer.writerow(self.hracc_totals)
 
             print()
             print("Saved activity profiles from valid data to file "
@@ -563,6 +603,7 @@ class AccelOnly:
         self.ankle_totals = None
         self.wrist_totals = None
         self.hr_totals = None
+        self.hracc_totals = None
 
         self.percent_valid = None
         self.hours_valid = None
