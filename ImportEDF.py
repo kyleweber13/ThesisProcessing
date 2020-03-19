@@ -56,7 +56,9 @@ class GENEActiv:
             self.z = file.readSignal(chn=2, start=self.start_offset)
 
         # Calculates gravity-subtracted vector magnitude
+        # Negative values become zero
         self.vm = np.sqrt(np.square(np.array([self.x, self.y, self.z])).sum(axis=0)) - 1
+        self.vm[self.vm < 0] = 0
 
         self.sample_rate = file.getSampleFrequencies()[1]  # sample rate
         self.starttime = file.getStartdatetime() + timedelta(seconds=self.start_offset/self.sample_rate)
@@ -179,7 +181,8 @@ class Bittium:
             self.raw = file.readSignal(chn=0, start=self.start_offset)
 
         if self.end_offset != 0:
-            print("Importing file from index {} to {}...".format(self.start_offset, self.end_offset))
+            print("Importing file from index {} to {}...".format(self.start_offset,
+                                                                 self.start_offset + self.end_offset))
             self.raw = file.readSignal(chn=0, start=self.start_offset, n=self.end_offset)
 
         print("ECG data import complete.")
@@ -211,7 +214,7 @@ class Bittium:
         print("\n" + "Import complete ({} seconds).".format(round(proc_time, 2)))
 
 
-def check_file(filepath):
+def check_file(filepath, print_summary=True):
     """Calculates file duration with start and end times. Prints results to console."""
 
     if filepath is None:
@@ -223,10 +226,11 @@ def check_file(filepath):
     start_time = edf_file.getStartdatetime()
     end_time = start_time + timedelta(seconds=edf_file.getFileDuration())
 
-    print("\n", filepath)
-    print("Sample rate: {}Hz".format(edf_file.getSampleFrequency(0)))
-    print("Start time: ", start_time)
-    print("End time:", end_time)
-    print("Duration: {} hours".format(round(ecg_duration/3600, 2)))
+    if print_summary:
+        print("\n", filepath)
+        print("Sample rate: {}Hz".format(edf_file.getSampleFrequency(0)))
+        print("Start time: ", start_time)
+        print("End time:", end_time)
+        print("Duration: {} hours".format(round(ecg_duration/3600, 2)))
 
     return start_time, end_time
