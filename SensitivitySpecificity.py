@@ -25,3 +25,4 @@ def calculate_sens_spec(filename, predicted_value_colname, true_value_colname):
     spec = outcome_list.count("TN") / (outcome_list.count("TN") + outcome_list.count("FP"))
 
     return sens, spec
+
