@@ -44,6 +44,8 @@ class AllDevices:
         self.wrist_totals = None
         self.hr_totals = None
         self.hracc_totals = None
+        self.ankle_hracc_comparison = None
+        self.hr_hracc_comparison = None
 
         self.percent_valid = None
         self.hours_valid = None
@@ -72,12 +74,13 @@ class AllDevices:
 
         self.check_ecgvalidity_activitylevel()
 
+        self.calculate_ankle_hracc_diff()
+        self.calculate_hr_hracc_diff()
+
         if self.write_results:
             self.write_activity_totals()
             self.write_validity_report()
             self.write_valid_epochs()
-
-        # self.plot_validity_data()
 
     def organize_data(self):
 
@@ -549,6 +552,52 @@ class AllDevices:
         print("\n" + "Saved epoch-by-epoch intensity data to file "
                      "{}Model Output/OND07_WTL_{}_01_Valid_EpochIntensityData.csv"
               .format(self.subject_object.output_dir, self.subject_object.subjectID))
+
+    def calculate_hr_hracc_diff(self):
+        """Calculates difference between HR-Acc and ankle models for each intensity. Positive value indicates
+           HR-Acc model measured more activity. Returns dictionary."""
+
+        self.hr_hracc_comparison = {"Sedentary": self.hracc_totals["Sedentary"] - self.hr_totals["Sedentary"],
+                                    "Sedentary%": round(self.hracc_totals["Sedentary%"] - self.hr_totals["Sedentary%"], 5),
+
+                                    "Light": self.hracc_totals["Light"] - self.hr_totals["Light"],
+                                    "Light%": round(self.hracc_totals["Light%"] - self.hr_totals["Light%"], 5),
+
+                                    "Moderate": self.hracc_totals["Moderate"] - self.hr_totals["Moderate"],
+                                    "Moderate%": round(self.hracc_totals["Moderate%"] - self.hr_totals["Moderate%"], 5),
+
+                                    "Vigorous": self.hracc_totals["Vigorous"] - self.hr_totals["Vigorous"],
+                                    "Vigorous%": round(self.hracc_totals["Vigorous%"] - self.hr_totals["Vigorous%"], 5),
+
+                                    "MVPA": self.hracc_totals["Moderate"] + self.hracc_totals["Vigorous"] -
+                                            (self.hr_totals["Moderate"] + self.hr_totals["Vigorous"]),
+                                    "MVPA%": round((self.hracc_totals["Moderate%"] + self.hracc_totals["Vigorous%"]) -
+                                                   (self.hr_totals["Moderate%"] + self.hr_totals["Vigorous%"]), 5)}
+
+    def calculate_ankle_hracc_diff(self):
+        """Calculates difference between HR-Acc and HR models for each intensity. Positive value indicates
+           HR-Acc model measured more activity. Returns dictionary."""
+
+        self.ankle_hracc_comparison = {"Sedentary": self.hracc_totals["Sedentary"] - self.ankle_totals["Sedentary"],
+                                       "Sedentary%": round(self.hracc_totals["Sedentary%"] -
+                                                           self.ankle_totals["Sedentary%"], 5),
+
+                                       "Light": self.hracc_totals["Light"] - self.ankle_totals["Light"],
+                                       "Light%": round(self.hracc_totals["Light%"] - self.ankle_totals["Light%"], 5),
+
+                                       "Moderate": self.hracc_totals["Moderate"] - self.ankle_totals["Moderate"],
+                                       "Moderate%": round(self.hracc_totals["Moderate%"] -
+                                                          self.ankle_totals["Moderate%"], 5),
+
+                                       "Vigorous": self.hracc_totals["Vigorous"] - self.ankle_totals["Vigorous"],
+                                       "Vigorous%": round(self.hracc_totals["Vigorous%"] -
+                                                          self.ankle_totals["Vigorous%"], 5),
+
+                                       "MVPA": (self.hracc_totals["Moderate"] + self.hracc_totals["Vigorous"]) -
+                                               (self.ankle_totals["Moderate"] + self.ankle_totals["Vigorous"]),
+                                       "MVPA%": round((self.hracc_totals["Moderate%"] + self.hracc_totals["Vigorous%"])
+                                                      - (self.ankle_totals["Moderate%"] +
+                                                         self.ankle_totals["Vigorous%"]), 5)}
 
     def write_validity_report(self):
 
