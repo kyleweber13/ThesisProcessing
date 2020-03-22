@@ -73,6 +73,7 @@ class DailyReport:
         self.sleep_indexes.append(len(self.timestamps) - 1)
 
     def create_activity_report(self):
+        """Generates activity report using 12:00am-11:59pm clock."""
 
         for start, end, day_num in zip(self.day_indexes[:], self.day_indexes[1:], np.arange(1, len(self.day_indexes))):
 
@@ -99,6 +100,7 @@ class DailyReport:
                                                                         / (60 / self.epoch_len)
 
     def create_activity_report_sleep(self):
+        """Generates activity report using days as defined by when participant went to bed."""
 
         for start, end, day_num in zip(self.sleep_indexes[:], self.sleep_indexes[1:],
                                        np.arange(1, len(self.sleep_indexes))):
