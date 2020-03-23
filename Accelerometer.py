@@ -20,13 +20,14 @@ import math
 
 class Wrist:
 
-    def __init__(self, filepath, output_dir, load_raw=False, accel_only=False,
+    def __init__(self, subjectID=None, filepath=None, output_dir=None, load_raw=False, accel_only=False,
                  epoch_len=15, start_offset=0, end_offset=0, ecg_object=None,
                  from_processed=True, processed_folder=None, write_results=False):
 
         print()
         print("======================================== WRIST ACCELEROMETER ========================================")
 
+        self.subjectID = subjectID
         self.filepath = filepath
         self.filename = self.filepath.split("/")[-1].split(".")[0]
         self.output_dir = output_dir
@@ -63,9 +64,9 @@ class Wrist:
         """Writes csv of epoched timestamps, counts, and intensity categorization to working directory."""
 
         if not self.accel_only:
-            out_filename = self.output_dir + "Model Output/" + self.filename + "_IntensityData.csv"
+            out_filename = self.output_dir + self.filename + "_IntensityData.csv"
         if self.accel_only:
-            out_filename = self.output_dir + "Model Output/" + self.filename + "_IntensityData_AccelOnly.csv"
+            out_filename = self.output_dir + self.filename + "_IntensityData_AccelOnly.csv"
 
         with open(out_filename, "w") as outfile:
             writer = csv.writer(outfile, delimiter=',', lineterminator="\n")
@@ -184,7 +185,7 @@ class WristModel:
 
 class Ankle:
 
-    def __init__(self, filepath=None, load_raw=False, accel_only=False,
+    def __init__(self, subjectID=None, filepath=None, load_raw=False, accel_only=False,
                  output_dir=None, rvo2=None, age=None, epoch_len=15,
                  start_offset=0, end_offset=0,
                  remove_baseline=False, ecg_object=None,
@@ -194,13 +195,13 @@ class Ankle:
         print()
         print("======================================== ANKLE ACCELEROMETER ========================================")
 
+        self.subjectID = subjectID
         self.filepath = filepath
         self.filename = self.filepath.split("/")[-1].split(".")[0]
         self.load_raw = load_raw
         self.accel_only = accel_only
         self.output_dir = output_dir
 
-        self.subjectID = self.filename.split("_")[2]
         self.rvo2 = rvo2
         self.age = age
 
@@ -214,6 +215,7 @@ class Ankle:
         self.from_processed = from_processed
         self.processed_folder = processed_folder
         self.treadmill_log_file = treadmill_log_file
+        self.treadmill_complete = True
         self.write_results = write_results
 
         # Loads raw accelerometer data and generates timestamps
@@ -225,12 +227,23 @@ class Ankle:
                                           remove_baseline=self.remove_baseline, accel_only=self.accel_only,
                                           from_processed=self.from_processed, processed_folder=processed_folder)
 
+        if self.treadmill_log_file is None:
+            print("\n" + "Need treadmill protocol data to continue. Try again.")
+
+            plt.title("Set treadmill protocol walk indexes on datasheet")
+            plt.plot(np.arange(0, len(self.epoch.svm)), self.epoch.svm, color='black')
+            plt.ylabel("Counts")
+            plt.xlabel("Epoch Index")
+
         # Create Treadmill object
-        self.treadmill = Treadmill(subjectID=self.subjectID, ankle_object=self, tm_log_file=self.treadmill_log_file)
+        self.treadmill = Treadmill(ankle_object=self)
 
         # Create AnkleModel object
         self.model = AnkleModel(ankle_object=self, write_results=self.write_results,
                                 ecg_object=self.ecg_object)
+
+        if self.write_results:
+            self.write_model()
 
     def plot_raw_over_epoch(self, day, downsample=3):
         """Creates a plot of two subplots with vector magnitude (raw) and epoched data."""
@@ -312,27 +325,41 @@ class Ankle:
 
         plt.legend(loc='upper right')
 
+    def write_model(self):
+
+        if not self.accel_only:
+            out_filename = self.model.anklemodel_outfile
+        if self.accel_only:
+            out_filename = self.output_dir + self.filename.split(".")[0].split("/")[-1] + \
+                           "_IntensityData_AccelOnly.csv"
+
+        # Writes epoch-by-epoch data to .csv
+        with open(out_filename, "w") as output:
+            writer = csv.writer(output, delimiter=",", lineterminator="\n")
+
+            writer.writerow(["Timestamp", "ActivityCount", "PredictedSpeed", "PredictedMETs", "IntensityCategory"])
+            writer.writerows(zip(self.model.epoch_timestamps, self.model.epoch_data,
+                                 self.model.linear_speed, self.model.predicted_mets, self.model.epoch_intensity))
+
+        print("\n" + "Complete. File {}".format(out_filename))
+
 
 class Treadmill:
 
-    def __init__(self, subjectID, ankle_object, tm_log_file):
+    def __init__(self, ankle_object):
         """Class that stores treadmill protocol information from tracking spreadsheet.
            Imports protocol start time and each walks' speed. Stores this information in a dictionary.
            Calculates the index from the raw data which corresponds to the protocol start time.
-
-        :arguments
-        -subjectID: subject ID
-        -ankle_object: AnkleAccel class instance
-        -tm_logfile: spreadsheet that contains treadmill information (raw; not processed)
 
         :returns
         -treadmill_dict: information imported from treadmill protocol spreadsheet
         -walk_speeds: list of walk speeds (easier to use than values in treadmill_dict)
         """
 
-        self.subjectID = subjectID
-        self.log_file = tm_log_file
+        self.subjectID = ankle_object.subjectID
+        self.log_file = ankle_object.treadmill_log_file
         self.epoch_data = ankle_object.epoch.svm
+        self.epoch_timestamps = ankle_object.epoch.timestamps
         self.walk_indexes = []
 
         # Creates treadmill dictionary and walk speed data from spreadsheet data
@@ -357,9 +384,13 @@ class Treadmill:
                 date = row[1][0:4] + "/" + str(row[1][4:7]).title() + "/" + row[1][7:] + " " + row[2]
                 date_formatted = (datetime.strptime(date, "%Y/%b/%d %H:%M"))
 
+                for i, stamp in enumerate(self.epoch_timestamps):
+                    if stamp < date_formatted:
+                        epoch_start_index = i
+
                 # Stores data and treadmill speeds (m/s) as dictionary
                 treadmill_dict = {"File": row[0], "ProtocolTime": date_formatted,
-                                  "StartIndex": "None",
+                                  "StartIndex": epoch_start_index,
                                   "60%": float(row[3]), "80%": float(row[4]),
                                   "100%": float(row[5]), "120%": float(row[6]),
                                   "140%": float(row[7])}
@@ -390,48 +421,6 @@ class Treadmill:
 
         return treadmill_dict, walk_speeds, walk_indexes
 
-    def create_plot(self, ankle_object):
-        """Creates a plot of epoched data for manual walking bout selection."""
-
-        print("\n" + "Highlight each walk on the graph.")
-
-        # Indexes for start of protocol for raw and epoched data
-        raw_start = self.treadmill_dict["StartIndex"]
-        epoch_start = int(raw_start / (ankle_object.raw.sample_rate * ankle_object.epoch_len))
-
-        fig = plt.figure(figsize=(11, 7))
-        graph = plt.gca()
-
-        plt.plot(np.arange(epoch_start, epoch_start + int((60*40)/ankle_object.epoch_len), 1),
-                 ankle_object.epoched.epoch[epoch_start:epoch_start + int((60*40)/ankle_object.epoch_len)],
-                 color='black', marker="o", markeredgecolor='black', markerfacecolor='red', markersize=4)
-
-        plt.title('Highlight Individual Walks')
-        plt.ylabel("Counts")
-        plt.xlabel("Epoch Index")
-
-        return graph
-
-    def select_walks(self, xmin, xmax):
-        """Function that is called by SpanSelector to retrieve x-coordinates from graph of treadmill walks."""
-
-        min_index, max_index = np.searchsorted(np.arange(0, len(self.epoch_data)), (xmin, xmax))
-        max_index = min(len(self.epoch_data) - 1, max_index)
-
-        highlighted_range = np.arange(0, len(self.epoch_data))[min_index:max_index]
-
-        # Saves x-coordinates to self.walk_indexes
-        start = np.c_[highlighted_range][0]
-        end = np.c_[highlighted_range][-1]
-
-        self.walk_indexes.append(start[0])
-        self.walk_indexes.append(end[0])
-
-        # Adds shaded areas to plot as walks are selected
-        plt.fill_betweenx(y=np.arange(0, max(self.epoch_data)), x1=start, x2=end, color='#29D114')
-
-        return start, end
-
     def plot_treadmill_protocol(self, ankle_object):
         """Plots raw and epoched data during treadmill protocol on subplots or
            just epoched data if raw not available."""
@@ -441,7 +430,8 @@ class Treadmill:
 
             print("\n" + "Plotting raw and epoched treadmill protocol data.")
 
-            raw_start = ankle_object.treadmill.treadmill_dict["StartIndex"]
+            raw_start = ankle_object.treadmill.treadmill_dict["StartIndex"] * \
+                        ankle_object.raw.sample_rate * ankle_object.epoch_len
 
             if type(raw_start) != int:
                 # Sets raw start index to 10 minutes prior to start of protocol
@@ -544,8 +534,8 @@ class AnkleModel:
         self.epoch_scale = 1
         self.epoch_timestamps = ankle_object.epoch.timestamps
         self.subjectID = ankle_object.subjectID
-        self.filename = ankle_object.filepath
-        self.file_id = ankle_object.filepath.split("/")[-1].split(".")[0]
+        self.filepath = ankle_object.filepath
+        self.filename = ankle_object.filepath.split("/")[-1].split(".")[0]
         self.rvo2 = ankle_object.rvo2
         self.tm_object = ankle_object.treadmill
         self.walk_indexes = None
@@ -557,7 +547,6 @@ class AnkleModel:
             self.valid_ecg = None
 
         self.output_dir = ankle_object.output_dir
-        self.anklemodel_outfile = self.output_dir + "Model Output/" + "{}_IntensityData.csv".format(self.file_id)
 
         try:
             # Index multiplier for different epoch lengths since treadmill data processed with 15-second epochs
@@ -582,9 +571,6 @@ class AnkleModel:
 
         except IndexError:
             pass
-
-        if self.write_results:
-            self.write_anklemodel()
 
     def scale_epoch_indexes(self):
         """Scales treadmill walk indexes if epoch length is not 15 seconds. Returns new list."""
@@ -918,21 +904,3 @@ class AnkleModel:
         ax3.xaxis.set_major_formatter(xfmt)
         ax3.xaxis.set_major_locator(locator)
         plt.xticks(rotation=45, fontsize=6)
-
-    def write_anklemodel(self):
-
-        if not self.accel_only:
-            out_filename = self.anklemodel_outfile
-        if self.accel_only:
-            out_filename = self.output_dir + "Model Output/" + self.filename.split(".")[0].split("/")[-1] + \
-                           "_IntensityData_AccelOnly.csv"
-
-        # Writes epoch-by-epoch data to .csv
-        with open(out_filename, "w") as output:
-            writer = csv.writer(output, delimiter=",", lineterminator="\n")
-
-            writer.writerow(["Timestamp", "ActivityCount", "PredictedSpeed", "PredictedMETs", "IntensityCategory"])
-            writer.writerows(zip(self.epoch_timestamps, self.epoch_data,
-                                 self.linear_speed, self.predicted_mets, self.epoch_intensity))
-
-        print("\n" + "Complete. File {}".format(out_filename))

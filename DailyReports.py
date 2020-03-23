@@ -10,7 +10,7 @@ class DailyReport:
     def __init__(self, subject_object=None, n_resting_hrs=30):
 
         self.subjectID = subject_object.subjectID
-
+        self.output_dir = subject_object.output_dir
         self.process_sleep = subject_object.sleeplog_file is not None
 
         if subject_object.load_ankle:
@@ -39,8 +39,8 @@ class DailyReport:
             self.hr_intensity = subject_object.ecg.epoch_intensity
 
         if self.process_sleep:
-            self.sleep_status = [i for i in subject_object.sleep.sleep_status]
-            self.sleep_timestamps = subject_object.sleep.sleep_data
+            self.sleep_status = [i for i in subject_object.sleep.status]
+            self.sleep_timestamps = subject_object.sleep.data
         if not self.process_sleep:
             self.sleep_status = None
             self.sleep_timestamps = None
@@ -48,11 +48,11 @@ class DailyReport:
         self.epoch_len = subject_object.epoch_len
         self.n_resting_hrs = n_resting_hrs
 
-        self.hr_report = {"Day Type": "12:00:00am - 11:59:59pm"}
-        self.wrist_report = {"Day Type": "12:00:00am - 11:59:59pm"}
+        self.hr_report = {"Day Definition": "12:00:00am - 11:59:59pm"}
+        self.wrist_report = {"Day Definition": "12:00:00am - 11:59:59pm"}
         self.sleep_report = {}
-        self.hr_report_sleep = {"Day Type": "Sleep Periods"}
-        self.wrist_report_sleep = {"Day Type": "Sleep Periods"}
+        self.hr_report_sleep = {"Day Definition": "Sleep Onset"}
+        self.wrist_report_sleep = {"Day Definition": "Sleep Onset"}
 
         self.day_indexes = []
         self.sleep_indexes = []
@@ -167,7 +167,8 @@ class DailyReport:
 
         fig, (ax1, ax2, ax3) = plt.subplots(3, sharex='col')
 
-        plt.suptitle("Participant {}: Heart Rate Data (Day = {})".format(self.subjectID, hr_data_dict["Day Type"]))
+        plt.suptitle("Participant {}: Heart Rate Data (Day = {})".format(self.subjectID,
+                                                                         hr_data_dict["Day Definition"]))
 
         ax1.bar(x=["Day " + str(i) for i in np.arange(1, n_days)], height=values[::3], label="Max HR",
                 color='grey', edgecolor='black')
@@ -198,7 +199,8 @@ class DailyReport:
 
         fig, (ax1, ax2) = plt.subplots(2, sharex='col')
 
-        plt.suptitle("Participant {}: Wrist Activity (Day = {})".format(self.subjectID, wrist_data_dict["Day Type"]))
+        plt.suptitle("Participant {}: Wrist Activity (Day = {})".format(self.subjectID,
+                                                                        wrist_data_dict["Day Definition"]))
         ax1.bar(x=["Day " + str(i) for i in np.arange(1, n_days)], height=values[::2], label="Non-Sedentary",
                 color='grey', edgecolor='black')
         ax1.set_ylabel("Minutes")
@@ -211,16 +213,16 @@ class DailyReport:
 
         plt.show()
 
-    def write_summary(self, output_dir):
+    def write_summary(self):
 
-        with open(file="{}{}_DailySummaries.csv".format(output_dir, self.subjectID), mode="w") as outfile:
+        with open(file="{}{}_DailySummaries.csv".format(self.output_dir, self.subjectID), mode="w") as outfile:
 
             fieldnames = []
 
             for key in self.hr_report.keys():
                 fieldnames.append(key)
             for key in self.wrist_report.keys():
-                if key != "Day Type":
+                if key != "Day Definition":
                     fieldnames.append(key)
                     
             clock_output = []
@@ -228,7 +230,7 @@ class DailyReport:
             for value in self.hr_report.values():
                 clock_output.append(value)
             for key, value in zip(self.wrist_report.keys(), self.wrist_report.values()):
-                if key != "Day Type":
+                if key != "Day Definition":
                     clock_output.append(value)
 
             sleep_output = []
@@ -236,7 +238,7 @@ class DailyReport:
             for value in self.hr_report_sleep.values():
                 sleep_output.append(value)
             for key, value in zip(self.wrist_report_sleep.keys(), self.wrist_report_sleep.values()):
-                if key != "Day Type":
+                if key != "Day Definition":
                     sleep_output.append(value)
 
             writer = csv.writer(outfile, lineterminator="\n", delimiter=',')

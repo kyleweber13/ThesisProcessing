@@ -3,7 +3,7 @@ import csv
 
 class HRAcc:
 
-    def __init__(self, subject_object=None, hrr_threshold=30, use_ankle_during_invalid_hr=False):
+    def __init__(self, subject_object=None, use_ankle_during_invalid_hr=False):
         """Class that uses data from subject_object.ecg and subject_object.ankle to combine data into a HR-Acc model.
 
         :argument
@@ -17,7 +17,7 @@ class HRAcc:
         self.write_results = subject_object.write_results
         self.epoch_len = subject_object.epoch_len
 
-        self.hrr_threshold = hrr_threshold
+        self.hrr_threshold = subject_object.hracc_threshold
         self.use_ankle_during_invalid_hr = use_ankle_during_invalid_hr
 
         self.ankle = subject_object.ankle
@@ -121,6 +121,3 @@ class HRAccModel:
 
         print("\n" + "Complete. File {} saved.".format(self.hracc.output_dir + "Model Output/" +
                                                        self.hracc.filename + "_HRAcc_IntensityData.csv"))
-
-
-# hracc = HRAcc(subject_object=x, hrr_threshold=30, use_ankle_during_invalid_hr=False)

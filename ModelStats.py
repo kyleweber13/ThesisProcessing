@@ -48,7 +48,10 @@ class Stats:
         if self.subject_object.ecg_filepath is None:
             hr = None
 
-        hr_acc = [i for i in validity_data.hr_acc if i is not None]
+        if self.subject_object.ankle_filepath is not None and self.subject_object.ecg_filepath is not None:
+            hr_acc = [i for i in validity_data.hr_acc if i is not None]
+        if self.subject_object.ankle_filepath is None or self.subject_object.ecg_filepath is None:
+            hr_acc = None
 
         # Ankle-Wrist comparison
         try:

@@ -107,6 +107,8 @@ class Data:
             pass
 
 
+"""
 x = Data(accel_filepath="/Users/kyleweber/Desktop/Test4_Accelerometer.EDF",
          temperature_filepath="/Users/kyleweber/Desktop/Test4_Temperature.EDF",
          log_filepath="/Users/kyleweber/Desktop/Test4.xlsx")
+"""

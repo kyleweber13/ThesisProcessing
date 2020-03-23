@@ -38,13 +38,14 @@ x = Subject(raw_edf_folder="/Users/kyleweber/Desktop/Data/OND07/EDF/",
 
             rest_hr_window=30,
             n_epochs_rest_hr=30,
-            hracc_threshold=24,
+            hracc_threshold=25,
 
             filter_ecg=True,
             epoch_len=15,
             crop_index_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/CropIndexes_All.csv",
             treadmill_log_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/Treadmill_Log.csv",
             demographics_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/Demographics_Data.csv",
-            sleeplog_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/",
+            sleeplog_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/SleepLogs_All.csv",
             output_dir="/Users/kyleweber/Desktop/Data/OND07/Processed Data/",
+            processed_folder="/Users/kyleweber/Desktop/Data/OND07/Processed Data/Model Output/",
             write_results=False)

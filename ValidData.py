@@ -141,8 +141,8 @@ class AllDevices:
 
         # Sleep validity data
         if self.subject_object.sleeplog_file is not None:
-            self.sleep_validity = self.subject_object.sleep.sleep_status if \
-                self.subject_object.sleep.sleep_status is not None else None
+            self.sleep_validity = self.subject_object.sleep.status if \
+                self.subject_object.sleep.status is not None else None
 
     def remove_invalid_hr(self):
         """Removes invalid epochs from Ankle and Wrist data based on HR validity."""
@@ -156,6 +156,9 @@ class AllDevices:
 
         if self.wrist_intensity is not None:
             self.wrist = [self.wrist_intensity[i] if self.hr_validity[i] == 0 else None for i in range(self.data_len)]
+
+        if self.hracc_intensity is not None:
+            self.hr_acc = [self.hracc_intensity[i] if self.hr_validity[i] == 0 else None for i in range(self.data_len)]
 
         print("Complete.")
 
@@ -247,8 +250,8 @@ class AllDevices:
         if self.subject_object.sleeplog_file is not None:
             self.validity_dict = {"Valid ECG %": 100 - self.subject_object.ecg.quality_report["Percent invalid"],
                                   "ECG Hours Lost": self.subject_object.ecg.quality_report["Hours lost"],
-                                  "Sleep %": self.subject_object.sleep.sleep_report["Sleep%"],
-                                  "Sleep Hours Lost": round(self.subject_object.sleep.sleep_report["SleepDuration"]
+                                  "Sleep %": self.subject_object.sleep.report["Sleep%"],
+                                  "Sleep Hours Lost": round(self.subject_object.sleep.report["SleepDuration"]
                                                             / 60, 2),
                                   "Total Valid %": self.percent_valid,
                                   "Total Hours Valid": self.hours_valid}
@@ -363,26 +366,31 @@ class AllDevices:
         locator = mdates.HourLocator(byhour=[0, 12], interval=1)
 
         fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, sharex='col', figsize=(10, 7))
-        ax1.set_title("Participant {}: Valid Data ({}% valid) (grey = sleep)".format(self.subject_object.subjectID,
-                                                                                     self.percent_valid))
+
+        if self.subject_object.sleeplog_file is None:
+            ax1.set_title("Participant {}: Valid Data ({}% valid) (no sleep data)".format(self.subject_object.subjectID,
+                                                                                          self.percent_valid))
 
         # Fills in region where participant was asleep
-        for day1, day2 in zip(self.subject_object.sleep.sleep_data[:], self.subject_object.sleep.sleep_data[1:]):
-            try:
-                # Overnight sleep
-                ax1.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, 4), color='black', alpha=0.35)
-                ax2.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, 4), color='black', alpha=0.35)
-                ax3.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, 4), color='black', alpha=0.35)
-                ax4.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, 4), color='black', alpha=0.35)
+        if self.subject_object.sleeplog_file is not None:
+            ax1.set_title("Participant {}: Valid Data ({}% valid) (green = sleep)".format(self.subject_object.subjectID,
+                                                                                          self.percent_valid))
+            for day1, day2 in zip(self.subject_object.sleep.data[:], self.subject_object.sleep.data[1:]):
+                try:
+                    # Overnight sleep
+                    ax1.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, 4), color='green', alpha=0.35)
+                    ax2.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, 4), color='green', alpha=0.35)
+                    ax3.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, 4), color='green', alpha=0.35)
+                    ax4.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, 4), color='green', alpha=0.35)
 
-                # Daytime naps
-                ax1.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, 4), color='black', alpha=0.35)
-                ax2.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, 4), color='black', alpha=0.35)
-                ax3.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, 4), color='black', alpha=0.35)
-                ax4.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, 4), color='black', alpha=0.35)
+                    # Daytime naps
+                    ax1.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, 4), color='green', alpha=0.35)
+                    ax2.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, 4), color='green', alpha=0.35)
+                    ax3.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, 4), color='green', alpha=0.35)
+                    ax4.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, 4), color='green', alpha=0.35)
 
-            except (AttributeError, TypeError):
-                pass
+                except (AttributeError, TypeError):
+                    pass
 
         if self.ankle_intensity is not None:
             ax1.plot(self.epoch_timestamps[:self.data_len], self.ankle[:self.data_len], color='#606060', label='Ankle')
@@ -531,8 +539,8 @@ class AllDevices:
 
     def write_valid_epochs(self):
 
-        with open("{}Model Output/OND07_WTL_{}_01_Valid_EpochIntensityData.csv".format(self.subject_object.output_dir,
-                                                                                       self.subject_object.subjectID),
+        with open("{}OND07_WTL_{}_01_Valid_EpochIntensityData.csv".format(self.subject_object.output_dir,
+                                                                          self.subject_object.subjectID),
                   'w', newline='') as outfile:
 
             writer = csv.writer(outfile, delimiter=",", lineterminator="\n")
@@ -566,8 +574,12 @@ class AllDevices:
         """Calculates difference between HR-Acc and ankle models for each intensity. Positive value indicates
            HR-Acc model measured more activity. Returns dictionary."""
 
+        if self.hr_acc is None:
+            return None
+
         self.hr_hracc_comparison = {"Sedentary": self.hracc_totals["Sedentary"] - self.hr_totals["Sedentary"],
-                                    "Sedentary%": round(self.hracc_totals["Sedentary%"] - self.hr_totals["Sedentary%"], 5),
+                                    "Sedentary%": round(self.hracc_totals["Sedentary%"] -
+                                                        self.hr_totals["Sedentary%"], 5),
 
                                     "Light": self.hracc_totals["Light"] - self.hr_totals["Light"],
                                     "Light%": round(self.hracc_totals["Light%"] - self.hr_totals["Light%"], 5),
@@ -586,6 +598,9 @@ class AllDevices:
     def calculate_ankle_hracc_diff(self):
         """Calculates difference between HR-Acc and HR models for each intensity. Positive value indicates
            HR-Acc model measured more activity. Returns dictionary."""
+
+        if self.hr_acc is None:
+            return None
 
         self.ankle_hracc_comparison = {"Sedentary": self.hracc_totals["Sedentary"] - self.ankle_totals["Sedentary"],
                                        "Sedentary%": round(self.hracc_totals["Sedentary%"] -
@@ -668,7 +683,7 @@ class AllDevices:
 
     def write_validity_report(self):
 
-        with open(self.subject_object.output_dir + "Validity Check/" + self.subject_object.subjectID +
+        with open(self.subject_object.output_dir + str(self.subject_object.subjectID) +
                   "_ValidityData.csv", "w") as outfile:
             fieldnames = ['Valid ECG %', 'ECG Hours Lost',
                           'Ankle Valid Counts', 'Ankle Invalid Counts',
@@ -684,7 +699,7 @@ class AllDevices:
             writer.writerow(self.validity_dict)
 
         print("\n" + "Saved validity summary data to file {}".format(self.subject_object.output_dir) +
-              self.subject_object.subjectID + "_ValidityData.csv")
+              str(self.subject_object.subjectID) + "_ValidityData.csv")
 
 
 class AccelOnly:
@@ -733,8 +748,7 @@ class AccelOnly:
 
         # Data used to determine which epochs are valid ---------------------------------------------------------------
         # Removal based on sleep data
-        if self.subject_object.sleeplog_file is not None:
-            self.remove_invalid_sleep()
+        self.remove_invalid_sleep()
 
         self.recalculate_activity_totals()
 
@@ -783,8 +797,8 @@ class AccelOnly:
 
         # Sleep validity data
         if self.subject_object.sleeplog_file is not None:
-            self.sleep_validity = self.subject_object.sleep.sleep_status if \
-                self.subject_object.sleep.sleep_status is not None else None
+            self.sleep_validity = self.subject_object.sleep.status if \
+                self.subject_object.sleep.status is not None else None
 
     def remove_invalid_sleep(self):
         """Removes invalid epochs from Ankle, Wrist, and HR data based on sleep validity.
@@ -793,19 +807,26 @@ class AccelOnly:
            the "raw" data.
         """
 
-        print("\n" + "Removing epochs during sleep...")
+        if self.subject_object.sleeplog_file is not None:
+            print("\n" + "Removing epochs during sleep...")
 
-        # Ankle -------------------------------------------------------------------------------------------------------
-        if self.ankle_intensity is not None and self.ankle is None:
-            self.ankle = [self.ankle_intensity[i] if self.sleep_validity[i] == 0 else None
-                          for i in range(self.data_len)]
+            # Ankle --------------------------------------------------------------------------------------------------
+            if self.ankle_intensity is not None and self.ankle is None:
+                self.ankle = [self.ankle_intensity[i] if self.sleep_validity[i] == 0 else None
+                              for i in range(self.data_len)]
 
-        # Wrist ------------------------------------------------------------------------------------------------------
-        if self.wrist_intensity is not None and self.wrist is None:
-            self.wrist = [self.wrist_intensity[i] if self.sleep_validity[i] == 0 else None
-                          for i in range(self.data_len)]
+            # Wrist --------------------------------------------------------------------------------------------------
+            if self.wrist_intensity is not None and self.wrist is None:
+                self.wrist = [self.wrist_intensity[i] if self.sleep_validity[i] == 0 else None
+                              for i in range(self.data_len)]
 
-        print("Complete.")
+            print("Complete.")
+
+        if self.subject_object.sleeplog_file is None:
+            print("No sleep data. Cannot remove sleep periods.")
+
+            self.ankle = self.ankle_intensity
+            self.wrist = self.wrist_intensity
 
     def generate_validity_report(self):
 
@@ -828,8 +849,8 @@ class AccelOnly:
 
         self.validity_dict = {"Valid ECG %": None,
                               "ECG Hours Lost": None,
-                              "Sleep %": self.subject_object.sleep.sleep_report["Sleep%"],
-                              "Sleep Hours Lost": round(self.subject_object.sleep.sleep_report["SleepDuration"] / 60,
+                              "Sleep %": self.subject_object.sleep.report["Sleep%"],
+                              "Sleep Hours Lost": round(self.subject_object.sleep.report["SleepDuration"] / 60,
                                                         2),
                               "Total Valid %": self.percent_valid,
                               "Total Hours Valid": self.hours_valid}
@@ -842,22 +863,28 @@ class AccelOnly:
         locator = mdates.HourLocator(byhour=[0, 12], interval=1)
 
         fig, (ax1, ax2) = plt.subplots(2, sharex='col', figsize=(10, 7))
-        ax1.set_title("Participant {}: Accel-Only Valid Data ({}% valid) "
-                      "(grey = sleep)".format(self.subject_object.subjectID, self.percent_valid))
+
+        if self.subject_object.sleeplog_file is None:
+            ax1.set_title("Participant {}: Accel-Only Valid Data ({}% valid) "
+                          "(no sleep data)".format(self.subject_object.subjectID, self.percent_valid))
 
         # Fills in region where participant was asleep
-        for day1, day2 in zip(self.subject_object.sleep.sleep_data[:], self.subject_object.sleep.sleep_data[1:]):
-            try:
-                # Overnight sleep
-                ax1.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, 4), color='black', alpha=0.35)
-                ax2.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, 4), color='black', alpha=0.35)
+        if self.subject_object.sleeplog_file is not None:
+            ax1.set_title("Participant {}: Accel-Only Valid Data ({}% valid) "
+                          "(green = sleep)".format(self.subject_object.subjectID, self.percent_valid))
 
-                # Daytime naps
-                ax1.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, 4), color='black', alpha=0.35)
-                ax2.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, 4), color='black', alpha=0.35)
+            for day1, day2 in zip(self.subject_object.sleep.data[:], self.subject_object.sleep.data[1:]):
+                try:
+                    # Overnight sleep
+                    ax1.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, 4), color='green', alpha=0.35)
+                    ax2.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, 4), color='green', alpha=0.35)
 
-            except (AttributeError, TypeError):
-                pass
+                    # Daytime naps
+                    ax1.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, 4), color='green', alpha=0.35)
+                    ax2.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, 4), color='green', alpha=0.35)
+
+                except (AttributeError, TypeError):
+                    pass
 
         if self.ankle_intensity is not None:
             ax1.plot(self.epoch_timestamps[:self.data_len], self.ankle[:self.data_len], color='#606060', label='Ankle')
@@ -919,9 +946,8 @@ class AccelOnly:
 
     def write_activity_totals(self):
 
-        with open("{}Model Output/OND07_WTL_{}"
-                  "_01_Valid_Activity_Totals_AccelOnly.csv".format(self.subject_object.output_dir,
-                                                                   self.subject_object.subjectID),
+        with open("{}OND07_WTL_{}_01_Valid_Activity_Totals_AccelOnly.csv".format(self.subject_object.output_dir,
+                                                                                 str(self.subject_object.subjectID)),
                   'w', newline='') as outfile:
 
             fieldnames = ['Model', 'Sedentary', 'Sedentary%', 'Light', 'Light%',
@@ -936,15 +962,13 @@ class AccelOnly:
 
             print()
             print("Saved activity profiles from valid data to file "
-                  "{}Model Output/OND07_WTL_{}"
-                  "_01_Valid_Activity_Totals_AccelOnly.csv".format(self.subject_object.output_dir,
-                                                                   self.subject_object.subjectID))
+                  "{}OND07_WTL_{}_01_Valid_Activity_Totals_AccelOnly.csv".format(self.subject_object.output_dir,
+                                                                                 str(self.subject_object.subjectID)))
 
     def write_valid_epochs(self):
 
-        with open("{}Model Output/OND07_WTL_{}"
-                  "_01_Valid_EpochIntensityData_AccelOnly.csv".format(self.subject_object.output_dir,
-                                                                      self.subject_object.subjectID),
+        with open("{}OND07_WTL_{}_01_Valid_EpochIntensityData_AccelOnly.csv".format(self.subject_object.output_dir,
+                                                                                    str(self.subject_object.subjectID)),
                   'w', newline='') as outfile:
 
             writer = csv.writer(outfile, delimiter=",", lineterminator="\n")
@@ -966,12 +990,13 @@ class AccelOnly:
                                  wrist_intensity, ankle_intensity))
 
         print("\n" + "Saved epoch-by-epoch intensity data to file "
-                     "{}Model Output/OND07_WTL_{}_01_Valid_EpochIntensityData_AccelOnly.csv"
-              .format(self.subject_object.output_dir, self.subject_object.subjectID))
+                     "{}OND07_WTL_{}_01_Valid_"
+                     "EpochIntensityData_AccelOnly.csv".format(self.subject_object.output_dir,
+                                                               str(self.subject_object.subjectID)))
 
     def write_validity_report(self):
 
-        with open(self.subject_object.output_dir + "Validity Check/" + self.subject_object.subjectID +
+        with open(self.subject_object.output_dir + str(self.subject_object.subjectID) +
                   "_ValidityData_AccelOnly.csv", "w") as outfile:
             fieldnames = ['Valid ECG %', 'ECG Hours Lost',
                           'Sleep %', 'Sleep Hours Lost',
@@ -983,4 +1008,4 @@ class AccelOnly:
             writer.writerow(self.validity_dict)
 
         print("\n" + "Saved validity summary data to file {}".format(self.subject_object.output_dir) +
-              "Validity Check/" + self.subject_object.subjectID + "_ValidityData_AccelOnly.csv")
+              str(self.subject_object.subjectID) + "_ValidityData_AccelOnly.csv")

@@ -1,17 +1,27 @@
 import numpy as np
+import os
 
 
-def import_demographics(demographics_file, subjectID):
+def import_demographics(subject_object=None):
     """Function that imports demographics data from spreadsheet for desired participants.
 
     :returns
     -demos_dict: dictionary containing demographics information
     """
 
-    data = np.loadtxt(fname=demographics_file, delimiter=",", skiprows=1, dtype="str")
+    demos_file = subject_object.demographics_file
+
+    if demos_file is None:
+        print("No demographics file input.")
+        return None
+    if not os.path.exists(demos_file):
+        print("Demographics file does not exist.")
+        return None
+
+    data = np.loadtxt(fname=demos_file, delimiter=",", skiprows=1, dtype="str")
 
     for row in data:
-        if str(subjectID) in row[0]:
+        if str(subject_object.subjectID) in row[0]:
 
             # Sets resting VO2 according to Kwan et al. (2004) values based on age/sex
             age = int(row[4])
@@ -33,4 +43,4 @@ def import_demographics(demographics_file, subjectID):
                           "Hand": row[9],
                           "RestVO2": rvo2}
 
-    return demos_dict
+    subject_object.demographics = demos_dict

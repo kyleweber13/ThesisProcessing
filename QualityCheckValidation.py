@@ -1,5 +1,6 @@
 import ImportEDF
 from random import randint
+import random
 import matplotlib.pyplot as plt
 import ECG
 import csv
@@ -7,7 +8,8 @@ import pandas
 import numpy as np
 
 
-def qc_check(raw_edf_folder='/Users/kyleweber/Desktop/Data/OND07/EDF/', output_file=None,
+def qc_check(raw_edf_folder='/Users/kyleweber/Desktop/Data/OND07/EDF/',
+             output_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/QualityControl_Output.csv",
              subject_num=None, start=None,
              epoch_len=15, sample_rate=250, write_results=True):
     """Imports a random segment of a random ECG file, runs the quality check algorithm on it, plots the raw and
@@ -18,8 +20,10 @@ def qc_check(raw_edf_folder='/Users/kyleweber/Desktop/Data/OND07/EDF/', output_f
 
     print("\n" + "Plotting random section of data from random participant...")
 
+    sub_list = np.arange(3002, 3045)
+
     if subject_num is None and start is None:
-        subjectID = randint(3002, 3040)
+        subjectID = random.choice(np.delete(sub_list, np.argwhere(sub_list == 3038)))
     if subject_num is not None:
         subjectID = subject_num
 
@@ -27,7 +31,7 @@ def qc_check(raw_edf_folder='/Users/kyleweber/Desktop/Data/OND07/EDF/', output_f
 
     print("Using file {}".format(ecg_filepath))
 
-    if subjectID is None and start is None:
+    if subject_num is None and start is None:
         file_start, file_end = ImportEDF.check_file(ecg_filepath, print_summary=False)
         file_duration = ((file_end - file_start).days * 86400 + (file_end - file_start).seconds) * 250
 
@@ -95,8 +99,15 @@ def qc_check_repeat(results_file, repeats_file, raw_edf_folder, assessor_initial
         if sect in input_sections:
             input_sections.remove(sect)
 
+    loop_tally = 0
     # Runs quality check for non-repeated sections
     for sect in input_sections:
+        loop_tally += 1
+
+        if loop_tally > 100:
+            print("\n" + "Reached 100 sections. SWITCH!")
+            break
+
         ecg, data, result = qc_check(raw_edf_folder=raw_edf_folder, output_file=None,
                                      subject_num=int(sect[0:4]), start=int(sect.split("_")[1]), write_results=False)
 
@@ -107,10 +118,10 @@ def qc_check_repeat(results_file, repeats_file, raw_edf_folder, assessor_initial
         print("Result saved.")
 
 
-qc_check_repeat(results_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/QualityControl_Testing_KW.xlsx",
+"""qc_check_repeat(results_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/QualityControl_Testing_KW.xlsx",
                 repeats_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/QualityControl_Testing_Repeats.csv",
                 raw_edf_folder='/Users/kyleweber/Desktop/Data/OND07/EDF/',
-                assessor_initials="KK")
+                assessor_initials="KK")"""
 
 
 class AnalyzeResults:
@@ -180,9 +191,9 @@ class AnalyzeResults:
         ax3.set_xlabel("Ratio (longest:shortest)")
 
 
+
 """
-ecg, data, result = qc_check(raw_edf_folder='/Users/kyleweber/Desktop/Data/OND07/EDF/',
-                             output_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/QualityControl_Output.csv",
-                             subject_num=3037, start=100000, write_results=False)
 x = AnalyzeResults("/Users/kyleweber/Desktop/Data/OND07/Tabular Data/QualityControl_Testing.xlsx")
+
+ecg, data, result = qc_check(write_results=True)
 """
