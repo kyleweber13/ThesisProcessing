@@ -10,15 +10,41 @@ class DailyReport:
     def __init__(self, subject_object=None, n_resting_hrs=30):
 
         self.subjectID = subject_object.subjectID
-        self.timestamps = subject_object.ankle.epoch.timestamps
-        self.ankle = subject_object.ankle.epoch.svm
-        self.ankle_intensity = subject_object.ankle.model.epoch_intensity
-        self.wrist = subject_object.wrist.epoch.svm
-        self.wrist_intensity = subject_object.wrist.model.epoch_intensity
-        self.hr = subject_object.ecg.epoch_hr
-        self.hr_intensity = subject_object.ecg.epoch_intensity
-        self.sleep_status = [i for i in subject_object.sleep.sleep_status]
-        self.sleep_timestamps = subject_object.sleep.sleep_data
+
+        self.process_sleep = subject_object.sleeplog_file is not None
+
+        if subject_object.load_ankle:
+            self.timestamps = subject_object.ankle.epoch.timestamps
+
+            self.ankle = subject_object.ankle.epoch.svm
+            self.ankle_intensity = subject_object.ankle.model.epoch_intensity
+
+        if not subject_object.load_ankle and subject_object.load_wrist:
+            self.timestamps = subject_object.wrist.epoch.timestamps
+            self.ankle = None
+            self.ankle_intensity = None
+
+        if not subject_object.load_ankle and not subject_object.load_wrist and subject_object.load_ecg:
+            self.timestamps = subject_object.ecg.epoch_timestamps
+
+            self.wrist = None
+            self.wrist_intensity = None
+
+        if subject_object.load_wrist:
+            self.wrist = subject_object.wrist.epoch.svm
+            self.wrist_intensity = subject_object.wrist.model.epoch_intensity
+
+        if subject_object.load_ecg:
+            self.hr = subject_object.ecg.epoch_hr
+            self.hr_intensity = subject_object.ecg.epoch_intensity
+
+        if self.process_sleep:
+            self.sleep_status = [i for i in subject_object.sleep.sleep_status]
+            self.sleep_timestamps = subject_object.sleep.sleep_data
+        if not self.process_sleep:
+            self.sleep_status = None
+            self.sleep_timestamps = None
+
         self.epoch_len = subject_object.epoch_len
         self.n_resting_hrs = n_resting_hrs
 
@@ -32,9 +58,12 @@ class DailyReport:
         self.sleep_indexes = []
 
         self.create_index_list()
-        self.create_sleep_indexes()
+
+        if self.process_sleep:
+            self.create_sleep_indexes()
+            self.create_activity_report_sleep()
+
         self.create_activity_report()
-        self.create_activity_report_sleep()
 
     def create_index_list(self):
 
@@ -79,8 +108,12 @@ class DailyReport:
 
             # HR data
             non_zero_hr = [i for i in self.hr[start:end] if i > 0]
-            awake_hr = [value for i, value in enumerate(self.hr[start:end])
-                        if self.sleep_status[start + i] == 0 and value > 0]
+
+            if self.process_sleep:
+                awake_hr = [value for i, value in enumerate(self.hr[start:end])
+                            if self.sleep_status[start + i] == 0 and value > 0]
+            if not self.process_sleep:
+                awake_hr = non_zero_hr
 
             self.hr_report["Day{} Max HR".format(day_num)] = max(self.hr[start:end])
             self.hr_report["Day{} Mean HR".format(day_num)] = round(sum(non_zero_hr) / len(non_zero_hr), 1)
@@ -96,8 +129,11 @@ class DailyReport:
             self.wrist_report["Day {} Wrist MVPA Minutes".format(day_num)] = wrist_mvpa_minutes
 
             # Sleep report
-            self.sleep_report["Day {} Sleep Minutes".format(day_num)] = self.sleep_status[start:end].count(2) \
-                                                                        / (60 / self.epoch_len)
+            if self.process_sleep:
+                self.sleep_report["Day {} Sleep Minutes".format(day_num)] = self.sleep_status[start:end].count(2) \
+                                                                            / (60 / self.epoch_len)
+            if not self.process_sleep:
+                self.sleep_report["Day {} Sleep Minutes".format(day_num)] = 0
 
     def create_activity_report_sleep(self):
         """Generates activity report using days as defined by when participant went to bed."""
@@ -152,6 +188,10 @@ class DailyReport:
 
     def plot_wrist_data(self, wrist_data_dict):
 
+        if not self.process_sleep and wrist_data_dict == self.wrist_report_sleep:
+            print("No sleep data to process.")
+            return None
+
         labels = [key for key in wrist_data_dict.keys() if "Wrist" in key]
         values = [wrist_data_dict[key] for key in labels]
         n_days = len(labels) / 2 + 1
@@ -171,7 +211,7 @@ class DailyReport:
 
         plt.show()
 
-    def write_results(self, output_dir):
+    def write_summary(self, output_dir):
 
         with open(file="{}{}_DailySummaries.csv".format(output_dir, self.subjectID), mode="w") as outfile:
 
@@ -204,7 +244,3 @@ class DailyReport:
             writer.writerow(fieldnames)
             writer.writerow(clock_output)
             writer.writerow(sleep_output)
-
-
-# data = DailyReport(subject_object=x)
-# data.write_results(output_dir="/Users/kyleweber/Desktop/")
