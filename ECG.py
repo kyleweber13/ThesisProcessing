@@ -226,7 +226,7 @@ class ECG:
 
         return epoch_timestamps_formatted, epoch_validity, epoch_hr
 
-    def find_resting_hr(self, window_size=60, n_windows=10, sleep_status=None):
+    def find_resting_hr(self, window_size=60, n_windows=10, sleep_status=None, start_index=None, end_index=None):
         """Function that calculates resting HR based on inputs.
 
         :argument
@@ -235,10 +235,15 @@ class ECG:
         -sleep_status: data from class Sleep that corresponds to asleep/awake epochs
         """
 
+        if start_index is not None and end_index is not None:
+            epoch_hr = np.array(self.epoch_hr[start_index:end_index])
+        else:
+            epoch_hr = self.epoch_hr
+
         # Sets integer for window length based on window_size and epoch_len
         window_len = int(window_size / self.epoch_len)
 
-        rolling_avg = [statistics.mean(self.epoch_hr[i:i + window_len]) if 0 not in self.epoch_hr[i:i + window_len]
+        rolling_avg = [statistics.mean(epoch_hr[i:i + window_len]) if 0 not in epoch_hr[i:i + window_len]
                        else None for i in range(len(self.epoch_hr))]
 
         # Calculates resting HR during waking hours if sleep_log available --------------------------------------------
@@ -318,7 +323,6 @@ class ECG:
         hr = round(perc_hrr * hrr / 100 + self.rest_hr, 1)
 
         return hr
-
 
     def calculate_intensity(self):
         """Calculates intensity category based on %HRR ranges.
