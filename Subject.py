@@ -9,6 +9,7 @@ import ValidData
 import ImportCropIndexes
 import ImportEDF
 import HRAcc
+import DailyReports
 
 import os
 import matplotlib.pyplot as plt
@@ -31,10 +32,10 @@ class Subject:
                  load_raw_ecg=False, load_raw_ankle=False, load_raw_wrist=False,
                  epoch_len=15, remove_epoch_baseline=False,
                  rest_hr_window=60, n_epochs_rest_hr=10, hracc_threshold=30,
-                 crop_index_file=None, filter_ecg=False, plot_data=False,
+                 crop_index_file=None, filter_ecg=False,
                  output_dir=None,
                  write_results=False, treadmill_log_file=None,
-                 demographics_file=None, sleeplog_folder=None):
+                 demographics_file=None, sleeplog_file=None):
 
         print()
         print("========================================= SUBJECT #{} "
@@ -99,7 +100,7 @@ class Subject:
         self.processed_folder = self.output_dir + "Model Output/"
 
         self.treadmill_log_file = treadmill_log_file
-        self.sleeplog_folder = sleeplog_folder
+        self.sleeplog_file = sleeplog_file
 
         # FILE CROPPING -----------------------------------------------------------------------------------------------
 
@@ -194,7 +195,7 @@ class Subject:
             quit()
 
         # Sleep data -------------------------------------------------------------------------------------------------
-        self.sleep = SleepLog.SleepLog(subject_object=self, sleeplog_file=self.sleeplog_folder)
+        self.sleep = SleepLog.SleepLog(subject_object=self, sleeplog_file=self.sleeplog_file)
 
         # UPDATING ECG DATA ------------------------------------------------------------------------------------------
         # Adds data to self.ecg since it relies on self.sleep to be complete
@@ -217,7 +218,7 @@ class Subject:
         # Processing that is only run if more than one device is loaded ----------------------------------------------
 
         # Validity check if ECG + at least one accelerometer is available
-        if self.wrist_filepath is not None and self.ankle_filepath is not None:
+        if self.wrist_filepath is not None and self.ankle_filepath is not None and self.ecg_filepath is None:
             self.valid_all = None
             self.valid_accelonly = ValidData.AccelOnly(subject_object=self, write_results=self.write_results)
 
@@ -231,6 +232,9 @@ class Subject:
         if self.load_wrist + self.load_ecg + self.load_ankle > 1:
             # Runs statistical analysis
             self.stats = ModelStats.Stats(subject_object=self)
+
+        # Runs daily summary measures
+        self.daily_summary = DailyReports.DailyReport(subject_object=self)
 
         processing_end = datetime.now()
 
@@ -340,7 +344,7 @@ class Subject:
             """Attach a text label above each bar in *rects*, displaying its height."""
             for rect in rects:
                 height = rect.get_height()
-                plt.annotate('{}'.format(round(height / 100 * 60 * valid_time, 1)),
+                plt.annotate('{} mins'.format(round(height / 100 * 60 * valid_time, 1)),
                              xy=(rect.get_x() + rect.get_width() / 2, height),
                              xytext=(0, 3),  # 3 points vertical offset
                              textcoords="offset points",
@@ -368,7 +372,7 @@ class Subject:
                             validity_object.hracc_totals["Vigorous"]]
 
         plt.subplots(2, 2, figsize=(10, 7))
-        plt.suptitle("Participant {}: Valid Only Data (bar labels are minutes)".format(self.subjectID))
+        plt.suptitle("Participant {}: Valid Only Data".format(self.subjectID))
 
         # Sedentary activity
         plt.subplot(2, 2, 1)

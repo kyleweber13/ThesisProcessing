@@ -65,7 +65,7 @@ class AllDevices:
             self.remove_invalid_hr()
 
         # Removal based on sleep data
-        if self.subject_object.sleeplog_folder is not None:
+        if self.subject_object.sleeplog_file is not None:
             self.remove_invalid_sleep()
 
         self.recalculate_activity_totals()
@@ -140,7 +140,7 @@ class AllDevices:
                 self.subject_object.hr_acc is not None else None
 
         # Sleep validity data
-        if self.subject_object.sleeplog_folder is not None:
+        if self.subject_object.sleeplog_file is not None:
             self.sleep_validity = self.subject_object.sleep.sleep_status if \
                 self.subject_object.sleep.sleep_status is not None else None
 
@@ -236,13 +236,22 @@ class AllDevices:
             print("\n" + "Validity check complete. {}% of the original "
                          "data is valid ({} hours).".format(self.percent_valid, self.hours_valid))
 
-        self.validity_dict = {"Valid ECG %": 100 - self.subject_object.ecg.quality_report["Percent invalid"],
-                              "ECG Hours Lost": self.subject_object.ecg.quality_report["Hours lost"],
-                              "Sleep %": self.subject_object.sleep.sleep_report["Sleep%"],
-                              "Sleep Hours Lost": round(self.subject_object.sleep.sleep_report["SleepDuration"] / 60,
-                                                        2),
-                              "Total Valid %": self.percent_valid,
-                              "Total Hours Valid": self.hours_valid}
+        if self.subject_object.sleeplog_file is None:
+            self.validity_dict = {"Valid ECG %": 100 - self.subject_object.ecg.quality_report["Percent invalid"],
+                                  "ECG Hours Lost": self.subject_object.ecg.quality_report["Hours lost"],
+                                  "Sleep %": 0,
+                                  "Sleep Hours Lost": 0,
+                                  "Total Valid %": self.percent_valid,
+                                  "Total Hours Valid": self.hours_valid}
+
+        if self.subject_object.sleeplog_file is not None:
+            self.validity_dict = {"Valid ECG %": 100 - self.subject_object.ecg.quality_report["Percent invalid"],
+                                  "ECG Hours Lost": self.subject_object.ecg.quality_report["Hours lost"],
+                                  "Sleep %": self.subject_object.sleep.sleep_report["Sleep%"],
+                                  "Sleep Hours Lost": round(self.subject_object.sleep.sleep_report["SleepDuration"]
+                                                            / 60, 2),
+                                  "Total Valid %": self.percent_valid,
+                                  "Total Hours Valid": self.hours_valid}
 
     def check_ecgvalidity_activitylevel(self):
 
@@ -599,6 +608,64 @@ class AllDevices:
                                                       - (self.ankle_totals["Moderate%"] +
                                                          self.ankle_totals["Vigorous%"]), 5)}
 
+    def plot_hracc_comparisons(self):
+
+        def autolabel(rects, valid_time):
+            """Attach a text label above each bar in *rects*, displaying its height."""
+            for rect in rects:
+                height = rect.get_height()
+                plt.annotate('{} mins'.format(round(height / 100 * 60 * valid_time, 1)),
+                             xy=(rect.get_x() + rect.get_width() / 2, 0),
+                             xytext=(0, 1),
+                             textcoords="offset points",
+                             ha='center', va='bottom')
+
+        sedentary_minutes = [self.ankle_hracc_comparison["Sedentary"], self.hr_hracc_comparison["Sedentary"]]
+        light_minutes = [self.ankle_hracc_comparison["Light"], self.hr_hracc_comparison["Light"]]
+        moderate_minutes = [self.ankle_hracc_comparison["Moderate"], self.hr_hracc_comparison["Moderate"]]
+        vigorous_minutes = [self.ankle_hracc_comparison["Vigorous"], self.hr_hracc_comparison["Vigorous"]]
+
+        plt.subplots(2, 2, figsize=(10, 7))
+        plt.suptitle("Participant {}: Model Comparisons "
+                     "(negative value means HR-Acc measured less time)".format(self.subject_object.subjectID))
+
+        # Sedentary activity
+        sed_perc = [i / 60 / self.validity_dict["Total Hours Valid"] * 100 for i in sedentary_minutes]
+
+        plt.subplot(2, 2, 1)
+        plt.title("Sedentary")
+        sed_plot = plt.bar(["HRAcc - Ankle", "HRAcc - HR"], sed_perc, color='grey', edgecolor='black')
+        autolabel(sed_plot, self.validity_dict["Total Hours Valid"])
+        plt.ylabel("Δ% of valid time")
+        plt.axhline(y=0, color='black', linewidth=1)
+
+        # Light activity
+        light_perc = [i / 60 / self.validity_dict["Total Hours Valid"] * 100 for i in light_minutes]
+        plt.subplot(2, 2, 2)
+        plt.title("Light Activity")
+        light_plot = plt.bar(["HRAcc - Ankle", "HRAcc - HR"], light_perc, color='green', edgecolor='black')
+        autolabel(light_plot, self.validity_dict["Total Hours Valid"])
+        plt.ylabel("Δ% of valid time")
+        plt.axhline(y=0, color='black', linewidth=1)
+
+        # Moderate activity
+        mod_perc = [i / 60 / self.validity_dict["Total Hours Valid"] * 100 for i in moderate_minutes]
+        plt.subplot(2, 2, 3)
+        plt.title("Moderate Activity")
+        mod_plot = plt.bar(["HRAcc - Ankle", "HRAcc - HR"], mod_perc, color='#EA5B19', edgecolor='black')
+        autolabel(mod_plot, self.validity_dict["Total Hours Valid"])
+        plt.ylabel("Δ% of valid time")
+        plt.axhline(y=0, color='black', linewidth=1)
+
+        # Vigorous activity
+        vig_perc = [i / 60 / self.validity_dict["Total Hours Valid"] * 100 for i in vigorous_minutes]
+        plt.subplot(2, 2, 4)
+        plt.title("Vigorous Activity")
+        vig_plot = plt.bar(["HRAcc - Ankle", "HRAcc - HR"], vig_perc, color='red', edgecolor='black')
+        autolabel(vig_plot, self.validity_dict["Total Hours Valid"])
+        plt.ylabel("Δ% of valid time")
+        plt.axhline(y=0, color='black', linewidth=1)
+
     def write_validity_report(self):
 
         with open(self.subject_object.output_dir + "Validity Check/" + self.subject_object.subjectID +
@@ -666,7 +733,7 @@ class AccelOnly:
 
         # Data used to determine which epochs are valid ---------------------------------------------------------------
         # Removal based on sleep data
-        if self.subject_object.sleeplog_folder is not None:
+        if self.subject_object.sleeplog_file is not None:
             self.remove_invalid_sleep()
 
         self.recalculate_activity_totals()
@@ -715,7 +782,7 @@ class AccelOnly:
                 self.subject_object.wrist.model.epoch_intensity is not None else None
 
         # Sleep validity data
-        if self.subject_object.sleeplog_folder is not None:
+        if self.subject_object.sleeplog_file is not None:
             self.sleep_validity = self.subject_object.sleep.sleep_status if \
                 self.subject_object.sleep.sleep_status is not None else None
 
