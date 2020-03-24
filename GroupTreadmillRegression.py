@@ -3,9 +3,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 from sklearn import metrics
+import seaborn as sb
 
 
-class Regression():
+class Regression:
 
     def __init__(self, data_file=None):
 
@@ -14,6 +15,7 @@ class Regression():
         self.predictor_values = None
 
         self.predicted_values = None
+        self.residuals = None
 
         self.model = None
         self.height_coef = None
@@ -38,7 +40,7 @@ class Regression():
 
     def calculate_regression(self):
 
-        self.predictor_values = self.data[["Counts", "Height", "Weight"]]
+        self.predictor_values = self.data[["Counts", "BMI"]]
         self.measured_values = self.data["Speed"].values
 
         regressor = LinearRegression()
@@ -47,17 +49,21 @@ class Regression():
 
         coeff_df = pd.DataFrame(regressor.coef_, self.predictor_values.columns, columns=['Coefficient'])
 
-        self.height_coef = coeff_df["Coefficient"]["Height"]
+        """self.height_coef = coeff_df["Coefficient"]["Height"]
         self.counts_coef = coeff_df["Coefficient"]["Counts"]
         self.weight_coef = coeff_df["Coefficient"]["Weight"]
         self.y_int = regressor.intercept_
 
-        self.equation = str(self.counts_coef) + " x counts + " + \
-                        str(self.height_coef) + " x height (cm) + " + \
-                        str(self.weight_coef) + " x weight (kg) + " + \
-                        str(self.y_int)
+        self.equation = str(round(self.counts_coef, 5)) + " x counts + " + \
+                        str(round(self.height_coef, 5)) + " x height (m) + " + \
+                        str(round(self.weight_coef, 5)) + " x weight (kg) + " + \
+                        str(round(self.y_int, 5))
+
+        print(self.equation)"""
 
         self.predicted_values = regressor.predict(self.predictor_values)
+        self.residuals = [measured - predicted for measured, predicted in
+                          zip(self.measured_values, self.predicted_values)]
 
         self.mean_abs_error = metrics.mean_absolute_error(y_true=self.measured_values, y_pred=self.predicted_values)
         self.mean_sq_error = metrics.mean_squared_error(y_true=self.measured_values, y_pred=self.predicted_values)
@@ -65,14 +71,18 @@ class Regression():
 
     def plot_regression(self):
 
-        plt.scatter(self.data["Counts"], self.data["Speed"], color='black', s=8, marker="X", label="Measured")
-        plt.scatter(self.data["Counts"], self.predicted_values, color='red', s=8, marker="o", label="Predicted")
-
-        plt.legend(loc='upper left')
-        plt.xlabel("Counts")
+        sb.lmplot(x="Counts", y="Speed", data=x.data)
+        plt.scatter(x.data["Counts"], x.predicted_values, color='red')
+        plt.legend(labels=["Regression line", "Measured", "95%CI", "Predicted"], loc='upper left')
         plt.ylabel("Speed (m/s)")
+        plt.title("MLR (counts + BMI ~ speed): r2 = {}".format(round(self.r2, 3)))
 
-        plt.title("MLR (counts + height + weight ~ speed): r2 = {}".format(round(self.r2, 3)))
+    def plot_error_measures(self):
+
+        plt.bar(x=["Mean abs.", "Mean square", "RMSE"], height=[self.mean_abs_error, self.mean_sq_error, self.rmse],
+                color='grey', edgecolor='black')
+        plt.ylabel("Error (m/s)")
+        plt.title("Multiple Linear Regression Error Measures")
 
 
-# x = Regression("/Users/kyleweber/Desktop/Data/OND07/Processed Data/TreadmillRegressionGroup.xlsx")
+x = Regression("/Users/kyleweber/Desktop/Data/OND07/Processed Data/TreadmillRegressionGroup.xlsx")
