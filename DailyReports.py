@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from datetime import datetime
 import csv
+import statistics
 
 
 class DailyReport:
@@ -36,6 +37,7 @@ class DailyReport:
 
         if subject_object.load_ecg:
             self.hr = subject_object.ecg.epoch_hr
+            self.valid_hr = subject_object.ecg.valid_hr
             self.hr_intensity = subject_object.ecg.epoch_intensity
 
         if self.process_sleep:
@@ -48,6 +50,10 @@ class DailyReport:
         self.epoch_len = subject_object.epoch_len
         self.n_resting_hrs = n_resting_hrs
 
+        self.roll_avg_hr = []
+        self.max_hr_timeofday = []
+        self.max_hr_indexes = []
+
         self.hr_report = {"Day Definition": "12:00:00am - 11:59:59pm"}
         self.wrist_report = {"Day Definition": "12:00:00am - 11:59:59pm"}
         self.sleep_report = {}
@@ -59,11 +65,11 @@ class DailyReport:
 
         self.create_index_list()
 
+        self.create_activity_report()
+
         if self.process_sleep:
             self.create_sleep_indexes()
             self.create_activity_report_sleep()
-
-        self.create_activity_report()
 
     def create_index_list(self):
 
@@ -104,9 +110,22 @@ class DailyReport:
     def create_activity_report(self):
         """Generates activity report using 12:00am-11:59pm clock."""
 
+        # Calculates rolling average of 4 consecutive epochs without invalid epochs
+        for index in range(0, len(self.valid_hr) - 4):
+            window = [i for i in self.valid_hr[index:index + 4] if i is not None]
+
+            if len(window) == 4:
+                self.roll_avg_hr.append(statistics.mean(window))
+            else:
+                self.roll_avg_hr.append(0)
+
+        # Pads with zeros due to lost epochs with averaging
+        for i in range(4):
+            self.roll_avg_hr.append(0)
+
         for start, end, day_num in zip(self.day_indexes[:], self.day_indexes[1:], np.arange(1, len(self.day_indexes))):
 
-            # HR data
+            # HR data: max, mean, resting
             non_zero_hr = [i for i in self.hr[start:end] if i > 0]
 
             if self.process_sleep:
@@ -115,10 +134,16 @@ class DailyReport:
             if not self.process_sleep:
                 awake_hr = non_zero_hr
 
-            self.hr_report["Day{} Max HR".format(day_num)] = max(self.hr[start:end])
+            self.hr_report["Day{} Max HR".format(day_num)] = max(self.roll_avg_hr[start:end])
             self.hr_report["Day{} Mean HR".format(day_num)] = round(sum(non_zero_hr) / len(non_zero_hr), 1)
             self.hr_report["Day{} Rest HR".format(day_num)] = round(sum(sorted(awake_hr)[:self.n_resting_hrs]) /
                                                                     self.n_resting_hrs, 1)
+            self.hr_report["Day{} Max HR Time".format(day_num)] = \
+                self.timestamps[self.roll_avg_hr[start:end].index(max(self.roll_avg_hr[start:end])) + start]
+
+            self.max_hr_timeofday.append(self.timestamps[self.roll_avg_hr[start:end]
+                                         .index(max(self.roll_avg_hr[start:end])) + start])
+            self.max_hr_indexes.append(self.roll_avg_hr[start:end].index(max(self.roll_avg_hr[start:end])) + start)
 
             # Wrist data
             wrist_active_minutes = ((end - start) - self.wrist_intensity[start:end].count(0)) / (60 / self.epoch_len)
@@ -149,6 +174,8 @@ class DailyReport:
             self.hr_report_sleep["Day{} Mean HR".format(day_num)] = round(sum(non_zero_hr) / len(non_zero_hr), 1)
             self.hr_report_sleep["Day{} Rest HR".format(day_num)] = round(sum(sorted(awake_hr)[:self.n_resting_hrs]) /
                                                                           self.n_resting_hrs, 1)
+            self.hr_report_sleep["Day{} Max HR Time".format(day_num)] = \
+                self.timestamps[self.roll_avg_hr[start:end].index(max(self.roll_avg_hr[start:end])) + start]
 
             # Wrist data
             wrist_active_minutes = ((end - start) - self.wrist_intensity[start:end].count(0)) / (
@@ -163,24 +190,24 @@ class DailyReport:
 
         labels = [key for key in hr_data_dict.keys() if "HR" in key]
         values = [hr_data_dict[key] for key in labels]
-        n_days = len(labels)/3 + 1
+        n_days = len(labels)/4 + 1
 
         fig, (ax1, ax2, ax3) = plt.subplots(3, sharex='col')
 
         plt.suptitle("Participant {}: Heart Rate Data (Day = {})".format(self.subjectID,
                                                                          hr_data_dict["Day Definition"]))
 
-        ax1.bar(x=["Day " + str(i) for i in np.arange(1, n_days)], height=values[::3], label="Max HR",
+        ax1.bar(x=["Day " + str(i) for i in np.arange(1, n_days)], height=values[::4], label="Max HR",
                 color='grey', edgecolor='black')
         ax1.set_ylabel("HR (bpm)")
         ax1.legend()
 
-        ax2.bar(x=["Day " + str(i) for i in np.arange(1, n_days)], height=values[1::3], label="Mean HR",
+        ax2.bar(x=["Day " + str(i) for i in np.arange(1, n_days)], height=values[1::4], label="Mean HR",
                 color='grey', edgecolor='black')
         ax2.set_ylabel("HR (bpm)")
         ax2.legend()
 
-        ax3.bar(x=["Day " + str(i) for i in np.arange(1, n_days)], height=values[2::3], label="Rest HR",
+        ax3.bar(x=["Day " + str(i) for i in np.arange(1, n_days)], height=values[2::4], label="Rest HR",
                 color='grey', edgecolor='black')
         ax3.set_ylabel("HR (bpm)")
         ax3.legend()
