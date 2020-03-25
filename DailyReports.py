@@ -54,17 +54,11 @@ class DailyReport:
         self.max_hr_timeofday = []
         self.max_hr_indexes = []
 
-        self.hr_report = {"Day Definition": "Calendar Date"}
-        self.wrist_report = {"Day Definition": "Calendar Date"}
-        self.hr_report_sleep = {"Day Definition": "Sleep Onset"}
-        self.wrist_report_sleep = {"Day Definition": "Sleep Onset"}
-        self.sleep_report = {}
-        self.sleep_report_sleep = {}
-        self.period_lengths = {}
-        self.period_lengths_sleep = {}
-
         self.day_indexes = []
         self.sleep_indexes = []
+
+        self.report_df = None
+        self.report_sleep_df = None
 
         self.create_index_list()
 
@@ -126,9 +120,27 @@ class DailyReport:
         for i in range(4):
             self.roll_avg_hr.append(0)
 
-        for start, end, day_num in zip(self.day_indexes[:], self.day_indexes[1:], np.arange(1, len(self.day_indexes))):
+        day_num_list = []
+        day_start_list = []
 
-            self.period_lengths["Day {} Period Length".format(day_num)] = ((end - start) / (60 / self.epoch_len) / 60)
+        max_hr_list = []
+        max_hr_time_list = []
+        mean_hr_list = []
+        rest_hr_list = []
+
+        wrist_active_minutes_list = []
+        wrist_mvpa_minutes_list = []
+
+        sleep_minutes_list = []
+
+        period_length_list = []
+        for start, end, day_num in zip(self.day_indexes[:], self.day_indexes[1:],
+                                       np.arange(1, len(self.day_indexes))):
+
+            day_num_list.append(day_num)
+            day_start_list.append(self.timestamps[start])
+
+            period_length_list.append(((end - start) / (60 / self.epoch_len) / 60))
 
             # HR data: max, mean, resting
             non_zero_hr = [i for i in self.hr[start:end] if i > 0]
@@ -139,123 +151,164 @@ class DailyReport:
             if not self.process_sleep:
                 awake_hr = non_zero_hr
 
-            self.hr_report["Day {} Max HR".format(day_num)] = max(self.roll_avg_hr[start:end])
-            self.hr_report["Day {} Mean HR".format(day_num)] = round(sum(non_zero_hr) / len(non_zero_hr), 1)
-            self.hr_report["Day {} Rest HR".format(day_num)] = round(sum(sorted(awake_hr)[:self.n_resting_hrs]) /
-                                                                     self.n_resting_hrs, 1)
-            self.hr_report["Day {} Max HR Time".format(day_num)] = \
-                self.timestamps[self.roll_avg_hr[start:end].index(max(self.roll_avg_hr[start:end])) + start]
+            max_hr_list.append(round(max(self.roll_avg_hr[start:end]), 1))
+            max_hr_time_list.append(
+                self.timestamps[self.roll_avg_hr[start:end].index(max(self.roll_avg_hr[start:end])) + start])
+            mean_hr_list.append(round(sum(non_zero_hr) / len(non_zero_hr), 1))
+            rest_hr_list.append(round(sum(sorted(awake_hr)[:self.n_resting_hrs]) / self.n_resting_hrs, 1))
 
-            self.max_hr_timeofday.append(self.timestamps[self.roll_avg_hr[start:end]
-                                         .index(max(self.roll_avg_hr[start:end])) + start])
-            self.max_hr_indexes.append(self.roll_avg_hr[start:end].index(max(self.roll_avg_hr[start:end])) + start)
-
-            # Wrist data
-            wrist_active_minutes = ((end - start) - self.wrist_intensity[start:end].count(0)) / (60 / self.epoch_len)
-            self.wrist_report["Day {} Wrist Active Minutes".format(day_num)] = wrist_active_minutes
-
-            wrist_mvpa_minutes = (self.wrist_intensity[start:end].count(2) +
-                                  self.wrist_intensity[start:end].count(3)) / (60 / self.epoch_len)
-            self.wrist_report["Day {} Wrist MVPA Minutes".format(day_num)] = wrist_mvpa_minutes
+            wrist_active_minutes_list.append(
+                ((end - start) - self.wrist_intensity[start:end].count(0)) / (60 / self.epoch_len))
+            wrist_mvpa_minutes_list.append(
+                (self.wrist_intensity[start:end].count(2) + self.wrist_intensity[start:end].count(3)) / (
+                            60 / self.epoch_len))
 
             # Sleep report
             if self.process_sleep:
-                self.sleep_report["Day {} Sleep Minutes".format(day_num)] = (end - start -
-                                                                             self.sleep_status[start:end].count(0)) \
-                                                                            / (60 / self.epoch_len)
+                sleep_minutes_list.append(
+                    (end - start - self.sleep_status[start:end].count(0)) / (60 / self.epoch_len))
 
             if not self.process_sleep:
-                self.sleep_report["Day {} Sleep Minutes".format(day_num)] = 0
+                sleep_minutes_list.append(0)
+
+        dataframe_dict = {"Day Definition": ["Calendar Date" for i in range(len(day_start_list))],
+                          "Day Start": day_start_list,
+                          "Max HR": max_hr_list,
+                          "Max HR Time": max_hr_time_list,
+                          "Mean HR": mean_hr_list,
+                          "Resting HR": rest_hr_list,
+                          "Wrist Active Minutes": wrist_active_minutes_list,
+                          "Wrist MVPA Minutes": wrist_mvpa_minutes_list,
+                          "Sleep Minutes": sleep_minutes_list,
+                          "Period Length (H)": period_length_list}
+
+        self.report_df = pd.DataFrame(dataframe_dict, index=day_num_list)
 
     def create_activity_report_sleep(self):
         """Generates activity report using days as defined by when participant went to bed."""
 
+        # ADAM START -------------------------------------------------------------------------------------------------
+        day_num_list = []
+        day_start_list = []
+
+        max_hr_list = []
+        max_hr_time_list = []
+        mean_hr_list = []
+        rest_hr_list = []
+
+        wrist_active_minutes_list = []
+        wrist_mvpa_minutes_list = []
+
+        sleep_minutes_list = []
+
+        period_length_list = []
         for start, end, day_num in zip(self.sleep_indexes[:], self.sleep_indexes[1:],
                                        np.arange(1, len(self.sleep_indexes))):
 
-            self.period_lengths_sleep["Day {} Period Length".format(day_num)] = ((end - start) /
-                                                                                 (60 / self.epoch_len) / 60)
+            day_num_list.append(day_num)
+            day_start_list.append(self.timestamps[start])
 
-            # HR data
+            period_length_list.append(((end - start) / (60 / self.epoch_len) / 60))
+
+            # HR data: max, mean, resting
             non_zero_hr = [i for i in self.hr[start:end] if i > 0]
-            awake_hr = [value for i, value in enumerate(self.hr[start:end])
-                        if self.sleep_status[start + i] == 0 and value > 0]
 
-            self.hr_report_sleep["Day {} Max HR".format(day_num)] = max(self.hr[start:end])
-            self.hr_report_sleep["Day {} Mean HR".format(day_num)] = round(sum(non_zero_hr) / len(non_zero_hr), 1)
-            self.hr_report_sleep["Day {} Rest HR".format(day_num)] = round(sum(sorted(awake_hr)[:self.n_resting_hrs]) /
-                                                                          self.n_resting_hrs, 1)
-            self.hr_report_sleep["Day {} Max HR Time".format(day_num)] = \
-                self.timestamps[self.roll_avg_hr[start:end].index(max(self.roll_avg_hr[start:end])) + start]
+            if self.process_sleep:
+                awake_hr = [value for i, value in enumerate(self.hr[start:end])
+                            if self.sleep_status[start + i] == 0 and value > 0]
+            if not self.process_sleep:
+                awake_hr = non_zero_hr
 
-            # Wrist data
-            wrist_active_minutes = ((end - start) - self.wrist_intensity[start:end].count(0)) / (
-                        60 / self.epoch_len)
-            self.wrist_report_sleep["Day {} Wrist Active Minutes".format(day_num)] = wrist_active_minutes
+            max_hr_list.append(round(max(self.roll_avg_hr[start:end]), 1))
+            max_hr_time_list.append(
+                self.timestamps[self.roll_avg_hr[start:end].index(max(self.roll_avg_hr[start:end])) + start])
+            mean_hr_list.append(round(sum(non_zero_hr) / len(non_zero_hr), 1))
+            rest_hr_list.append(round(sum(sorted(awake_hr)[:self.n_resting_hrs]) / self.n_resting_hrs, 1))
 
-            wrist_mvpa_minutes = (self.wrist_intensity[start:end].count(2) +
-                                  self.wrist_intensity[start:end].count(3)) / (60 / self.epoch_len)
-            self.wrist_report_sleep["Day {} Wrist MVPA Minutes".format(day_num)] = wrist_mvpa_minutes
+            wrist_active_minutes_list.append(
+                ((end - start) - self.wrist_intensity[start:end].count(0)) / (60 / self.epoch_len))
+            wrist_mvpa_minutes_list.append(
+                (self.wrist_intensity[start:end].count(2) + self.wrist_intensity[start:end].count(3)) / (
+                        60 / self.epoch_len))
 
             # Sleep report
             if self.process_sleep:
-                self.sleep_report_sleep["Day {} Sleep " \
-                                        "Minutes".format(day_num)] = (end - start -
-                                                                      self.sleep_status[start:end].count(0)) / \
-                                                                     (60 / self.epoch_len)
+                sleep_minutes_list.append(
+                    (end - start - self.sleep_status[start:end].count(0)) / (60 / self.epoch_len))
 
             if not self.process_sleep:
-                self.sleep_report_sleep["Day {} Sleep Minutes".format(day_num)] = 0
+                sleep_minutes_list.append(0)
 
-    def plot_hr_data(self, hr_data_dict):
+        dataframe_dict = {"Day Definition": ["Sleep Cycle" for i in range(len(day_start_list))],
+                          "Day Start": day_start_list,
+                          "Max HR": max_hr_list,
+                          "Max HR Time": max_hr_time_list,
+                          "Mean HR": mean_hr_list,
+                          "Resting HR": rest_hr_list,
+                          "Wrist Active Minutes": wrist_active_minutes_list,
+                          "Wrist MVPA Minutes": wrist_mvpa_minutes_list,
+                          "Sleep Minutes": sleep_minutes_list,
+                          "Period Length (H)": period_length_list}
 
-        labels = [key for key in hr_data_dict.keys() if "HR" in key]
-        values = [hr_data_dict[key] for key in labels]
-        n_days = len(labels)/4 + 1
+        self.report_sleep_df = pd.DataFrame(dataframe_dict, index=day_num_list)
 
-        fig, (ax1, ax2, ax3) = plt.subplots(3, sharex='col')
+    def plot_hr_data(self, day_definition="sleep"):
+
+        if day_definition == "sleep" or day_definition == "Sleep":
+            df = self.report_sleep_df
+        if day_definition == "Date" or day_definition == "date":
+            df = self.report_df
+
+        if not self.process_sleep and df == self.report_sleep_df:
+            print("No sleep data to process.")
+            return None
+
+        fig, (ax1, ax2, ax3) = plt.subplots(3, sharex='col', figsize=(10, 7))
 
         plt.suptitle("Participant {}: Heart Rate Data (Day = {})".format(self.subjectID,
-                                                                         hr_data_dict["Day Definition"]))
+                                                                         df.iloc[0]["Day Definition"]))
 
-        ax1.bar(x=["Day " + str(i) for i in np.arange(1, n_days)], height=values[::4], label="Max HR",
-                color='grey', edgecolor='black')
+        ax1.bar(x=["Day " + str(i) for i in np.arange(1, df.shape[0]+1)],
+                height=df["Max HR"],
+                label="Max HR", color='grey', edgecolor='black')
         ax1.set_ylabel("HR (bpm)")
         ax1.legend()
 
-        ax2.bar(x=["Day " + str(i) for i in np.arange(1, n_days)], height=values[1::4], label="Mean HR",
-                color='grey', edgecolor='black')
+        ax2.bar(x=["Day " + str(i) for i in np.arange(1, df.shape[0]+1)], height=df["Mean HR"],
+                label="Mean HR", color='grey', edgecolor='black')
         ax2.set_ylabel("HR (bpm)")
         ax2.legend()
 
-        ax3.bar(x=["Day " + str(i) for i in np.arange(1, n_days)], height=values[2::4], label="Rest HR",
-                color='grey', edgecolor='black')
+        ax3.bar(x=["Day " + str(i) for i in np.arange(1, df.shape[0]+1)], height=df["Resting HR"],
+                label="Rest HR", color='grey', edgecolor='black')
         ax3.set_ylabel("HR (bpm)")
         ax3.legend()
 
         plt.show()
 
-    def plot_wrist_data(self, wrist_data_dict):
+    def plot_wrist_data(self, day_definition="sleep"):
 
-        if not self.process_sleep and wrist_data_dict == self.wrist_report_sleep:
+        if day_definition == "sleep" or day_definition == "Sleep":
+            df = self.report_sleep_df
+        if day_definition == "Date" or day_definition == "date":
+            df = self.report_df
+
+        if not self.process_sleep and df == self.report_sleep_df:
             print("No sleep data to process.")
             return None
 
-        labels = [key for key in wrist_data_dict.keys() if "Wrist" in key]
-        values = [wrist_data_dict[key] for key in labels]
-        n_days = len(labels) / 2 + 1
-
-        fig, (ax1, ax2) = plt.subplots(2, sharex='col')
+        fig, (ax1, ax2) = plt.subplots(2, sharex='col', figsize=(10, 7))
 
         plt.suptitle("Participant {}: Wrist Activity (Day = {})".format(self.subjectID,
-                                                                        wrist_data_dict["Day Definition"]))
-        ax1.bar(x=["Day " + str(i) for i in np.arange(1, n_days)], height=values[::2], label="Non-Sedentary",
-                color='green', edgecolor='black')
+                                                                        df.iloc[0]["Day Definition"]))
+        ax1.bar(x=["Day " + str(i) for i in np.arange(1, df.shape[0]+1)],
+                height=df["Wrist Active Minutes"],
+                label="Non-Sedentary", color='green', edgecolor='black')
         ax1.set_ylabel("Minutes")
         ax1.legend()
 
-        ax2.bar(x=["Day " + str(i) for i in np.arange(1, n_days)], height=values[1::2], label="MVPA",
-                color='#EA890C', edgecolor='black')
+        ax2.bar(x=["Day " + str(i) for i in np.arange(1, df.shape[0]+1)], height=df["Wrist MVPA Minutes"],
+                label="MVPA", color='#EA890C', edgecolor='black')
         ax2.set_ylabel("Minutes")
         ax2.legend()
 
@@ -298,7 +351,13 @@ class DailyReport:
 
     def write_summary(self):
 
-        with open(file="{}{}_DailySummaries.csv".format(self.output_dir, self.subjectID), mode="w") as outfile:
+        self.report_df.to_csv(path_or_buf=self.output_dir + "{}_DailyReport.csv".format(self.subjectID), sep=",")
+
+        if self.process_sleep:
+            self.report_sleep_df.to_csv(path_or_buf=self.output_dir + "{}_DailyReportSleep.csv".format(self.subjectID),
+                                        sep=",")
+
+        """with open(file="{}{}_DailySummaries.csv".format(self.output_dir, self.subjectID), mode="w") as outfile:
 
             fieldnames = []
 
@@ -340,4 +399,4 @@ class DailyReport:
 
             writer.writerow(fieldnames)
             writer.writerow(date_output)
-            writer.writerow(sleep_output)
+            writer.writerow(sleep_output)"""
