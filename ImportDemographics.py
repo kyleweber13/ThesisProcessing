@@ -40,6 +40,7 @@ def import_demographics(subject_object=None):
                           "Sex": row[6],
                           "Weight": float(row[7]),
                           "Height": float(row[8]),
+                          "BMI": round(float(float(row[7]) / (float(row[8])/100)**2), 2),
                           "Hand": row[9],
                           "RestVO2": rvo2}
 
