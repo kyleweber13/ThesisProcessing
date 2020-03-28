@@ -115,7 +115,7 @@ class Subject:
         self.daily_summary = None
 
         # =============================================== RUNS METHODS ================================================
-        self.wrist_filepath, self.ankle_filepath, self.ecg_filepath = self.get_raw_filepaths()
+        self.wrist_filepath, self.wrist_temp_filepath, self.ankle_filepath, self.ecg_filepath = self.get_raw_filepaths()
 
         ImportDemographics.import_demographics(subject_object=self)
 
@@ -137,7 +137,8 @@ class Subject:
             self.stats = ModelStats.Stats(subject_object=self)
 
         # Runs daily summary measures
-        self.daily_summary = DailyReports.DailyReport(subject_object=self)
+        if self.load_ecg and self.load_wrist:
+            self.daily_summary = DailyReports.DailyReport(subject_object=self)
 
         processing_end = datetime.now()
 
@@ -153,11 +154,15 @@ class Subject:
         dom_hand = self.demographics["Hand"][0]
 
         wrist_filename = None
+        wrist_temperature_filename = None
         ankle_filename = None
         ecg_filename = None
 
         if self.load_wrist:
-            wrist_filenames = [self.raw_edf_folder + i for i in subject_file_list if "Wrist" in i]
+            wrist_filenames = [self.raw_edf_folder + i for i in subject_file_list
+                               if "Wrist" in i and "Accelerometer" in i]
+            wrist_temperature_filenames = [self.raw_edf_folder + i for i in subject_file_list
+                                           if "Wrist" in i and "Temperature" in i]
 
             if len(wrist_filenames) == 2:
                 wrist_filename = [i for i in wrist_filenames if dom_hand + "Wrist" not in i][0]
@@ -166,6 +171,14 @@ class Subject:
             if len(wrist_filenames) == 0:
                 print("Could not find the correct wrist accelerometer file.")
                 wrist_filename = None
+
+            if len(wrist_temperature_filenames) == 2:
+                wrist_temperature_filename = [i for i in wrist_temperature_filenames if dom_hand + "Wrist" not in i][0]
+            if len(wrist_temperature_filenames) == 1:
+                wrist_temperature_filename = wrist_temperature_filenames[0]
+            if len(wrist_temperature_filenames) == 0:
+                print("Could not find the correct wrist temperature file.")
+                wrist_temperature_filename = None
 
         if self.load_ankle:
             ankle_filenames = [self.raw_edf_folder + i for i in subject_file_list if "Ankle" in i]
@@ -184,7 +197,7 @@ class Subject:
                 print("Could not find the correct ECG file.")
                 ecg_filename = None
 
-        return wrist_filename, ankle_filename, ecg_filename
+        return wrist_filename, wrist_temperature_filename, ankle_filename, ecg_filename
 
     def crop_files(self):
 
@@ -259,7 +272,9 @@ class Subject:
         # Objects from Accelerometer script
         if self.wrist_filepath is not None:
             self.wrist = Accelerometer.Wrist(subjectID=self.subjectID,
-                                             filepath=self.wrist_filepath, load_raw=self.load_raw_wrist,
+                                             filepath=self.wrist_filepath,
+                                             temperature_filepath=self.wrist_temp_filepath,
+                                             load_raw=self.load_raw_wrist,
                                              output_dir=self.output_dir, accel_only=self.accel_only,
                                              processed_folder=self.processed_folder, from_processed=self.from_processed,
                                              write_results=self.write_results,
@@ -278,7 +293,7 @@ class Subject:
                                              start_offset=self.start_offset_dict["Ankle"],
                                              end_offset=self.end_offset_dict["Ankle"],
                                              age=self.demographics["Age"], rvo2=self.demographics["RestVO2"],
-                                             ecg_object=self.ecg)
+                                             bmi=self.demographics["BMI"], ecg_object=self.ecg)
 
         if self.ankle_filepath is None and self.wrist_filepath is None and self.ecg_filepath is None:
             print("No files were imported.")
