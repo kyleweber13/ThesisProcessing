@@ -1,5 +1,6 @@
 import ImportEDF
 import EpochData
+import Nonwear
 
 import csv
 import matplotlib.pyplot as plt
@@ -20,7 +21,8 @@ import math
 
 class Wrist:
 
-    def __init__(self, subjectID=None, filepath=None, output_dir=None, load_raw=False, accel_only=False,
+    def __init__(self, subjectID=None, filepath=None, temperature_filepath=None,
+                 output_dir=None, load_raw=False, accel_only=False,
                  epoch_len=15, start_offset=0, end_offset=0, ecg_object=None,
                  from_processed=True, processed_folder=None, write_results=False):
 
@@ -29,6 +31,7 @@ class Wrist:
 
         self.subjectID = subjectID
         self.filepath = filepath
+        self.temperature_filepath = temperature_filepath
         self.filename = self.filepath.split("/")[-1].split(".")[0]
         self.output_dir = output_dir
 
@@ -39,7 +42,7 @@ class Wrist:
         self.start_offset = start_offset
         self.end_offset = end_offset
 
-        self.ecg_obejct = ecg_object
+        self.ecg_object = ecg_object
 
         self.from_processed = from_processed
         self.processed_folder = processed_folder
@@ -54,7 +57,18 @@ class Wrist:
                                           from_processed=self.from_processed, processed_folder=processed_folder)
 
         # Model
-        self.model = WristModel(accel_object=self, ecg_object=self.ecg_obejct)
+        self.model = WristModel(accel_object=self, ecg_object=self.ecg_object)
+
+        # Temperature data
+        self.temperature = ImportEDF.GENEActivTemperature(filepath=self.temperature_filepath)
+
+        if self.load_raw:
+            self.temperature.sample_rate = 1 / (300 / self.raw.sample_rate)
+        if not self.load_raw:
+            self.temperature.sample_rate = 0.25
+
+        # Non-wear data
+        self.nonwear = Nonwear.Nonwear(accel_object=self)
 
         # Write results
         if self.write_results:
@@ -186,7 +200,7 @@ class WristModel:
 class Ankle:
 
     def __init__(self, subjectID=None, filepath=None, load_raw=False, accel_only=False,
-                 output_dir=None, rvo2=None, age=None, epoch_len=15,
+                 output_dir=None, rvo2=None, age=None, bmi=1, epoch_len=15,
                  start_offset=0, end_offset=0,
                  remove_baseline=False, ecg_object=None,
                  from_processed=True, treadmill_log_file=None,
@@ -204,6 +218,7 @@ class Ankle:
 
         self.rvo2 = rvo2
         self.age = age
+        self.bmi = bmi
 
         self.epoch_len = epoch_len
         self.start_offset = start_offset
@@ -239,7 +254,7 @@ class Ankle:
         self.treadmill = Treadmill(ankle_object=self)
 
         # Create AnkleModel object
-        self.model = AnkleModel(ankle_object=self, write_results=self.write_results,
+        self.model = AnkleModel(ankle_object=self, bmi=self.bmi, write_results=self.write_results,
                                 ecg_object=self.ecg_object)
 
         if self.write_results:
@@ -384,9 +399,13 @@ class Treadmill:
                 date = row[1][0:4] + "/" + str(row[1][4:7]).title() + "/" + row[1][7:] + " " + row[2]
                 date_formatted = (datetime.strptime(date, "%Y/%b/%d %H:%M"))
 
-                for i, stamp in enumerate(self.epoch_timestamps):
-                    if stamp < date_formatted:
-                        epoch_start_index = i
+                try:
+                    for i, stamp in enumerate(self.epoch_timestamps):
+                        if stamp < date_formatted:
+                            epoch_start_index = i
+                            break
+                except TypeError:
+                    epoch_start_index = "N/A"
 
                 # Stores data and treadmill speeds (m/s) as dictionary
                 treadmill_dict = {"File": row[0], "ProtocolTime": date_formatted,
@@ -518,7 +537,7 @@ class Treadmill:
 
 class AnkleModel:
 
-    def __init__(self, ankle_object, write_results=False, ecg_object=None):
+    def __init__(self, ankle_object, bmi=1, write_results=False, ecg_object=None):
         """Class that stores ankle model data. Performs regression analysis on activity counts vs. gait speed.
         Predicts gait speed and METs from activity counts using ACSM equation that predicts VO2 from gait speed.
 
@@ -536,6 +555,7 @@ class AnkleModel:
         self.subjectID = ankle_object.subjectID
         self.filepath = ankle_object.filepath
         self.filename = ankle_object.filepath.split("/")[-1].split(".")[0]
+        self.bmi = bmi
         self.rvo2 = ankle_object.rvo2
         self.tm_object = ankle_object.treadmill
         self.walk_indexes = None
@@ -558,6 +578,7 @@ class AnkleModel:
             # Values from regression equation
             self.r2 = None
 
+            # Individual calibration
             self.linear_dict, self.linear_speed = self.calculate_linear_regression()
             self.quad_dict, self.quad_speed = self.calculate_quad_regression()
             self.log_dict, self.log_speed = None, None
@@ -568,6 +589,9 @@ class AnkleModel:
             # Predicted outcome measures from linear regression
             self.epoch_intensity_valid = None
             self.intensity_totals_valid = None
+
+            # Group regression
+            self.linear_speed_group = self.calculate_group_regression()
 
         except IndexError:
             pass
@@ -904,3 +928,72 @@ class AnkleModel:
         ax3.xaxis.set_major_formatter(xfmt)
         ax3.xaxis.set_major_locator(locator)
         plt.xticks(rotation=45, fontsize=6)
+
+    def calculate_group_regression(self):
+        """Performs linear regression to predict gait speed from activity counts.
+           Calculates predicted speed that would attain 1.5 METs (sedentary -> light).
+
+        :returns
+        -y_intercept: y-intercept from gait speed vs. counts regression
+        -coefficient: slope from gait speed vs. counts regression
+        -threshold_dict: dictionary for predicted speeds and counts for different intensity levels
+        """
+
+        # Reshapes data to work with
+        counts = np.array(self.tm_object.avg_walk_counts).reshape(-1, 1)
+        speed = np.array(self.tm_object.walk_speeds).reshape(-1, 1)  # m/s
+
+        # Linear regression using sklearn
+        lm = linear_model.LinearRegression()
+        model = lm.fit(counts, speed)
+        y_intercept = 0.88281
+        counts_coef = 0.00135
+        bmi_coef = -0.021696531091255
+
+        # SUMMARY METRICS ---------------------------------------------------------------------------------------------
+
+        print("\n" + "Group-tevel treadmill regression")
+
+        print("-Equation: y = {}x + {}BMI + {}".format(counts_coef, bmi_coef, y_intercept))
+
+        # Calculates count and speed limits for different intensity levels
+        light_speed = ((1.5 * self.rvo2 - self.rvo2) / 0.1) / 60  # m/s
+
+        # ESTIMATING SPEED --------------------------------------------------------------------------------------------
+
+        # Predicts speed using linear regression
+        linear_predicted_speed = [svm * counts_coef + self.bmi * bmi_coef + y_intercept for svm in self.epoch_data]
+
+        # Creates a list of predicted speeds where any speed below the sedentary threshold is set to 0 m/s
+        above_sed_thresh = []
+
+        # Threshold corresponding to a 5-second walk at preferred speed
+        meaningful_threshold = round(self.tm_object.avg_walk_counts[2] / (self.epoch_len / 5), 2)
+
+        # Sets threshold to either meaningful_threshold OR light_counts based on which is greater
+        if meaningful_threshold >= self.linear_dict["Light counts"]:
+            meaningful_threshold = meaningful_threshold
+        if meaningful_threshold < self.linear_dict["Light counts"]:
+            meaningful_threshold = self.linear_dict["Light counts"]
+
+        for speed, counts in zip(linear_predicted_speed, self.epoch_data):
+            if counts >= meaningful_threshold:
+                above_sed_thresh.append(speed)
+            if counts < meaningful_threshold:
+                above_sed_thresh.append(0)
+
+        return above_sed_thresh
+
+    def plot_regression_comparison(self):
+
+        plt.plot(np.arange(min(self.epoch_data), max(self.epoch_data)),
+                 [self.linear_dict["a"]*i + self.linear_dict["b"]
+                  for i in np.arange(min(self.epoch_data), max(self.epoch_data))], color='green', label="Ind.")
+
+        plt.plot(np.arange(min(self.epoch_data), max(self.epoch_data)),
+                 [0.00135*i + -0.021696531091255*self.bmi + 0.88281
+                  for i in np.arange(min(self.epoch_data), max(self.epoch_data))], color='black', label="Group")
+
+        plt.ylabel("Speed (m/s)")
+        plt.xlabel("Counts")
+        plt.legend()
