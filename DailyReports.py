@@ -357,46 +357,72 @@ class DailyReport:
             self.report_sleep_df.to_csv(path_or_buf=self.output_dir + "{}_DailyReportSleep.csv".format(self.subjectID),
                                         sep=",")
 
-        """with open(file="{}{}_DailySummaries.csv".format(self.output_dir, self.subjectID), mode="w") as outfile:
+    def plot_week(self, day_definition="sleep"):
 
-            fieldnames = []
+        # Which data to use
+        if day_definition == "Sleep" or day_definition == "sleep":
+            df = self.report_sleep_df
+        if day_definition == "Date" or day_definition == "date":
+            df = self.report_df
 
-            for key in self.hr_report.keys():
-                fieldnames.append(key)
-            for key in self.wrist_report.keys():
-                if key != "Day Definition":
-                    fieldnames.append(key)
-            for key in self.sleep_report.keys():
-                fieldnames.append(key)
-            for key in self.period_lengths.keys():
-                fieldnames.append(key)
-                    
-            date_output = []
-            
-            for value in self.hr_report.values():
-                date_output.append(value)
-            for key, value in zip(self.wrist_report.keys(), self.wrist_report.values()):
-                if key != "Day Definition":
-                    date_output.append(value)
-            for value in self.sleep_report.values():
-                date_output.append(value)
-            for value in self.period_lengths.values():
-                date_output.append(value)
+        # DATA LABELS ------------------------------------------------------------------------------------------------
+        def gen_sleep_label(rects, value):
+            for rect in rects:
+                height = rect.get_height()
+                plt.annotate('{} \n hours'.format(round(value, 2)),
+                             xy=(rect.get_x() + rect.get_width() / 2, height / 2),
+                             xytext=(0, 0),
+                             textcoords="offset points", color='white',
+                             ha='center', va='center')
 
-            sleep_output = []
+        def gen_activity_label(rects, value):
+            for rect in rects:
+                height = rect.get_height()
+                plt.annotate('{} \n hours'.format(round(value/60, 2)),
+                             xy=(rect.get_x() + rect.get_width() / 2, height / 2),
+                             xytext=(0, 0),
+                             textcoords="offset points", color='black',
+                             ha='center', va='center')
 
-            for value in self.hr_report_sleep.values():
-                sleep_output.append(value)
-            for key, value in zip(self.wrist_report_sleep.keys(), self.wrist_report_sleep.values()):
-                if key != "Day Definition":
-                    sleep_output.append(value)
-            for value in self.sleep_report_sleep.values():
-                sleep_output.append(value)
-            for value in self.period_lengths_sleep.values():
-                sleep_output.append(value)
+        # PLOTTING ---------------------------------------------------------------------------------------------------
+        plt.subplots(1, 2, figsize=(10, 7))
 
-            writer = csv.writer(outfile, lineterminator="\n", delimiter=',')
+        plt.suptitle("Subject {}: Weekly Report".format(self.subjectID))
 
-            writer.writerow(fieldnames)
-            writer.writerow(date_output)
-            writer.writerow(sleep_output)"""
+        # SLEEP DATA
+        plt.subplot(1, 2, 1)
+
+        for day in range(0, df.shape[0]):
+            sleep_plot = plt.bar(x="Day {}".format(day + 1), height=df.iloc[day]["Sleep Minutes"] / 60,
+                                 color="dimgray", edgecolor='black')
+            gen_sleep_label(rects=sleep_plot, value=df.iloc[day]["Sleep Minutes"] / 60)
+
+            plt.ylabel("Hours")
+            plt.title("Sleep Durations")
+            plt.yticks(np.arange(0, max(df["Sleep Minutes"]) / 60 * 1.1, 1))
+            plt.ylim(0, max(df["Sleep Minutes"]) / 60 * 1.1)
+
+        plt.subplot(1, 2, 2)
+
+        # WRIST ACTIVITY DATA
+        for day in range(0, df.shape[0]):
+
+            awake_minutes = df.iloc[day]["Period Length (H)"] * 60 - df.iloc[day]["Sleep Minutes"]
+            active_percent = 100 * df.iloc[day]["Wrist Active Minutes"] / awake_minutes
+            inactive_percent = 100 - active_percent
+
+            if awake_minutes < 60:
+                plt.bar(x="Day {}".format(day + 1), height=0)
+                break
+
+            inactive = plt.bar(x="Day {}".format(day + 1), height=inactive_percent,
+                               color='darkgrey', edgecolor='black', bottom=active_percent)
+            gen_activity_label(rects=inactive, value=awake_minutes)
+
+            active = plt.bar(x="Day {}".format(day + 1), height=active_percent,
+                             color='green', edgecolor='black')
+            gen_activity_label(rects=active, value=df.iloc[day]["Wrist Active Minutes"])
+
+            plt.title("Activity by Day")
+            plt.yticks(np.arange(0, 110, 10))
+            plt.ylabel("% of waking hours")
