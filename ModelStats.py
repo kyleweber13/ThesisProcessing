@@ -14,11 +14,14 @@ class Stats:
         if subject_object.valid_all is not None:
             print("\n" + "ALL DEVICES")
             self.kappa_all = self.cohens_kappa(subject_object.valid_all)
+            self.regression_kappa_all = self.regression_cohens_kappa(subject_object.valid_all)
+
         if subject_object.valid_accelonly is not None:
             print("\n" + "ACCELEROMETER-ONLY DATA")
             self.kappa_accelonly = self.cohens_kappa(subject_object.valid_accelonly)
+            self.regression_kappa_accelonly = self.regression_cohens_kappa(subject_object.valid_accelonly)
 
-    def cohens_kappa(self, validity_data):
+    def cohens_kappa(self, validity_object):
         """Calculates Cohen's kappa for all available model comparisons. Returns results in a dictionary.
 
         :argument
@@ -34,22 +37,22 @@ class Stats:
 
         # Creates data sets excluding Nones
         if self.subject_object.wrist_filepath is not None:
-            wrist = [i for i in validity_data.wrist if i is not None]
+            wrist = [i for i in validity_object.wrist if i is not None]
         if self.subject_object.wrist_filepath is None:
             wrist = None
 
         if self.subject_object.ankle_filepath is not None:
-            ankle = [i for i in validity_data.ankle if i is not None]
+            ankle = [i for i in validity_object.ankle if i is not None]
         if self.subject_object.ankle_filepath is None:
             ankle = None
 
         if self.subject_object.ecg_filepath is not None:
-            hr = [i for i in validity_data.hr if i is not None]
+            hr = [i for i in validity_object.hr if i is not None]
         if self.subject_object.ecg_filepath is None:
             hr = None
 
         if self.subject_object.ankle_filepath is not None and self.subject_object.ecg_filepath is not None:
-            hr_acc = [i for i in validity_data.hr_acc if i is not None]
+            hr_acc = [i for i in validity_object.hr_acc if i is not None]
         if self.subject_object.ankle_filepath is None or self.subject_object.ecg_filepath is None:
             hr_acc = None
 
@@ -110,3 +113,23 @@ class Stats:
         print("-HR-HRAcc: {}".format(kappa_dict["HR-HRAcc"]))
 
         return kappa_dict
+
+    def regression_cohens_kappa(self, validity_object):
+
+        if self.subject_object.ankle_filepath is not None:
+
+            ind_awake = [validity_object.ankle_intensity[i] for i in range(len(validity_object.ankle_intensity))
+                         if self.subject_object.sleep.status[i] == 0 and validity_object.ankle_intensity[i] > 0
+                         or validity_object.ankle_intensity_group[i] > 0]
+
+            group_awake = [validity_object.ankle_intensity_group[i]
+                           for i in range(len(validity_object.ankle_intensity_group))
+                           if self.subject_object.sleep.status[i] == 0 and validity_object.ankle_intensity[i] > 0
+                           or validity_object.ankle_intensity_group[i] > 0]
+
+            kappa = round(sklearn.metrics.cohen_kappa_score(y1=ind_awake, y2=group_awake), 4)
+
+            return kappa
+
+        else:
+            return None
