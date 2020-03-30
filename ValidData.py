@@ -4,6 +4,7 @@ import numpy as np
 import csv
 import statistics as stats
 import scipy.stats
+from datetime import timedelta
 
 
 class AllDevices:
@@ -25,6 +26,7 @@ class AllDevices:
 
         # Data from other objects; invalid data not removed
         self.ankle_intensity = None
+        self.ankle_intensity_group = None
         self.wrist_intensity = None
         self.hr_intensity = None
         self.hracc_intensity = None
@@ -35,12 +37,14 @@ class AllDevices:
 
         # Data that only contains valid epochs
         self.ankle = None
+        self.ankle_group = None
         self.wrist = None
         self.hr = None
         self.hr_acc = None
 
         # Dictionaries for activity totals using valid data
         self.ankle_totals = None
+        self.ankle_totals_group = None
         self.wrist_totals = None
         self.hr_totals = None
         self.hracc_totals = None
@@ -116,9 +120,13 @@ class AllDevices:
                 self.ankle_intensity = self.subject_object.ankle.model.epoch_intensity if \
                     self.subject_object.ankle.model.epoch_intensity is not None else None
 
+                self.ankle_intensity_group = self.subject_object.ankle.model.epoch_intensity_group if \
+                    self.subject_object.ankle.model.epoch_intensity_group is not None else None
+
         # Error handling if ankle model not run (no treadmill protocol?)
         except AttributeError:
             self.ankle_intensity = None
+            self.ankle_intensity_group = None
 
         # Wrist intensity data
         if self.subject_object.wrist_filepath is not None:
@@ -153,6 +161,8 @@ class AllDevices:
 
         if self.ankle_intensity is not None:
             self.ankle = [self.ankle_intensity[i] if self.hr_validity[i] == 0 else None for i in range(self.data_len)]
+            self.ankle_group = [self.ankle_intensity_group[i] if self.hr_validity[i] == 0
+                                else None for i in range(self.data_len)]
 
         if self.wrist_intensity is not None:
             self.wrist = [self.wrist_intensity[i] if self.hr_validity[i] == 0 else None for i in range(self.data_len)]
@@ -176,10 +186,14 @@ class AllDevices:
         if self.ankle_intensity is not None and self.ankle is None:
             self.ankle = [self.ankle_intensity[i] if self.sleep_validity[i] == 0 else None
                           for i in range(self.data_len)]
+            self.ankle_group = [self.ankle_intensity_group[i] if self.sleep_validity[i] == 0 else None
+                                for i in range(self.data_len)]
 
         # If ankle data available and invalid data was removed
         if self.ankle_intensity is not None and self.ankle is not None:
             self.ankle = [self.ankle[i] if self.sleep_validity[i] == 0 else None for i in range(self.data_len)]
+            self.ankle_group = [self.ankle_group[i] if self.sleep_validity[i] == 0
+                                else None for i in range(self.data_len)]
 
         # Wrist ------------------------------------------------------------------------------------------------------
         # If wrist data available and invalid data was not removed using HR
@@ -440,12 +454,28 @@ class AllDevices:
                                  "Vigorous": self.ankle.count(3) / epoch_to_minutes,
                                  "Vigorous%": round(self.ankle.count(3) / n_valid_epochs, 3)}
 
+            self.ankle_totals_group = {"Model": "AnkleGroup",
+                                       "Sedentary": self.ankle_group.count(0) / epoch_to_minutes,
+                                       "Sedentary%": round(self.ankle_group.count(0) / n_valid_epochs, 3),
+                                       "Light": (self.ankle_group.count(1)) / epoch_to_minutes,
+                                       "Light%": round(self.ankle_group.count(1) / n_valid_epochs, 3),
+                                       "Moderate": self.ankle_group.count(2) / epoch_to_minutes,
+                                       "Moderate%": round(self.ankle_group.count(2) / n_valid_epochs, 3),
+                                       "Vigorous": self.ankle_group.count(3) / epoch_to_minutes,
+                                       "Vigorous%": round(self.ankle_group.count(3) / n_valid_epochs, 3)}
+
         if self.ankle is None:
             self.ankle_totals = {"Model": "Ankle",
                                  "Sedentary": 0, "Sedentary%": 0,
                                  "Light": 0, "Light%": 0,
                                  "Moderate": 0, "Moderate%": 0,
                                  "Vigorous": 0, "Vigorous%": 0}
+
+            self.ankle_totals_group = {"Model": "Ankle",
+                                       "Sedentary": 0, "Sedentary%": 0,
+                                       "Light": 0, "Light%": 0,
+                                       "Moderate": 0, "Moderate%": 0,
+                                       "Vigorous": 0, "Vigorous%": 0}
 
         # WRIST -------------------------------------------------------------------------------------------------------
         if self.wrist is not None:
@@ -629,11 +659,12 @@ class AllDevices:
             """Attach a text label above each bar in *rects*, displaying its height."""
             for rect in rects:
                 height = rect.get_height()
+
                 plt.annotate('{} mins'.format(round(height / 100 * 60 * valid_time, 1)),
-                             xy=(rect.get_x() + rect.get_width() / 2, 0),
-                             xytext=(0, 1),
+                             xy=(rect.get_x() + rect.get_width() / 2, height / 2),
+                             xytext=(0, 0),
                              textcoords="offset points",
-                             ha='center', va='bottom')
+                             ha='center', va='center')
 
         sedentary_minutes = [self.ankle_hracc_comparison["Sedentary"], self.hr_hracc_comparison["Sedentary"]]
         light_minutes = [self.ankle_hracc_comparison["Light"], self.hr_hracc_comparison["Light"]]
@@ -701,6 +732,119 @@ class AllDevices:
         print("\n" + "Saved validity summary data to file {}".format(self.subject_object.output_dir) +
               str(self.subject_object.subjectID) + "_ValidityData.csv")
 
+    def calculate_regression_diff(self):
+        """Calculates comparative measures between individual and group regression equation data.
+           Values are calculated on epochs above sedentary threshold and while participant was awake.
+        """
+
+        ind_data = [self.subject_object.ankle.model.linear_speed[i]
+                    for i in range(len(self.subject_object.ankle.model.linear_speed))
+                    if self.subject_object.sleep.status[i] < 1
+                    and (self.subject_object.ankle.model.linear_speed[i] > 0
+                    or self.subject_object.ankle.model.linear_speed_group[i] > 0)]
+
+        group_data = [self.subject_object.ankle.model.linear_speed_group[i]
+                      for i in range(len(self.subject_object.ankle.model.linear_speed_group))
+                      if self.subject_object.sleep.status[i] < 1
+                      and (self.subject_object.ankle.model.linear_speed[i] > 0
+                           or self.subject_object.ankle.model.linear_speed_group[i] > 0)]
+
+        difference_list = [ind - group for ind, group in zip(ind_data, group_data)]
+        mean_value = [(ind + group)/2 for ind, group in zip(ind_data, group_data)]
+
+        rms_diff = np.mean([diff ** 2 for diff in difference_list])**(1/2)
+        mean_abs_diff = np.mean([abs(diff) for diff in difference_list])
+
+        return ind_data, group_data, difference_list, rms_diff, mean_abs_diff
+
+    def plot_regression_comparison(self):
+
+        # x-axis datestamp formating
+        xfmt = mdates.DateFormatter("%a, %I:%M %p")
+        locator = mdates.HourLocator(byhour=[0, 12], interval=1)
+
+        fig, (ax1, ax2) = plt.subplots(2, sharex='col', figsize=(10, 7))
+
+        fig.suptitle("Individual vs. Group Regression Comparison")
+
+        ax1.plot(self.subject_object.ankle.epoch.timestamps, self.ankle, color='black', label="Individual")
+        ax1.plot(self.subject_object.ankle.epoch.timestamps, self.ankle_group, color='red', label="Group")
+        ax1.set_xlim(self.subject_object.ankle.epoch.timestamps[0] + timedelta(seconds=3600),
+                     self.subject_object.ankle.epoch.timestamps[-1] + timedelta(seconds=3600))
+        ax1.set_ylabel("Intensity Category")
+
+        ax2.plot(self.subject_object.ankle.epoch.timestamps,
+                 [self.subject_object.ankle.model.linear_speed[i] if self.subject_object.sleep.status[i] == 0
+                  else None for i in range(len(self.subject_object.ankle.model.linear_speed))],
+                 color='black', label="Individual")
+
+        ax2.plot(self.subject_object.ankle.epoch.timestamps,
+                 [self.subject_object.ankle.model.linear_speed_group[i] if self.subject_object.sleep.status[i] == 0
+                  else None for i in range(len(self.subject_object.ankle.model.linear_speed_group))],
+                 color='red', label='Group')
+
+        ax2.set_xlim(self.subject_object.ankle.epoch.timestamps[0] + timedelta(seconds=3600),
+                     self.subject_object.ankle.epoch.timestamps[-1] + timedelta(seconds=3600))
+        ax2.set_ylabel("Predicted Speed (m/s)")
+
+        ax2.xaxis.set_major_formatter(xfmt)
+        ax2.xaxis.set_major_locator(locator)
+        plt.xticks(rotation=45, fontsize=6)
+
+        if self.subject_object.sleeplog_file is not None:
+
+            for day1, day2 in zip(self.subject_object.sleep.data[:], self.subject_object.sleep.data[1:]):
+                try:
+                    # Overnight sleep
+                    ax1.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, 4), color='green', alpha=0.35)
+                    ax2.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, 4), color='green', alpha=0.35)
+
+                    # Daytime naps
+                    ax1.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, 4), color='green', alpha=0.35)
+                    ax2.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, 4), color='green', alpha=0.35)
+
+                except (AttributeError, TypeError):
+                    pass
+
+    def plot_regression_totals_comparison(self):
+
+        sedentary_minutes = [self.ankle_totals["Sedentary"], self.ankle_totals_group["Sedentary"]]
+
+        light_minutes = [self.ankle_totals["Light"], self.ankle_totals_group["Light"]]
+
+        moderate_minutes = [self.ankle_totals["Moderate"], self.ankle_totals_group["Moderate"]]
+
+        vigorous_minutes = [self.ankle_totals["Vigorous"], self.ankle_totals_group["Vigorous"]]
+
+        plt.subplots(2, 2, figsize=(10, 7))
+        plt.suptitle("Participant {}: Valid Only Data".format(self.subject_object.subjectID))
+
+        # Sedentary activity
+        plt.subplot(2, 2, 1)
+        plt.title("Sedentary")
+        plt.bar(["Individual", "Group"], sedentary_minutes, color='grey', edgecolor='black')
+        plt.ylim(0, max(sedentary_minutes) * 1.2)
+        plt.ylabel("Minutes")
+
+        # Light activity
+        plt.subplot(2, 2, 2)
+        plt.title("Light Activity")
+        plt.bar(["Individual", "Group"], light_minutes, color='green', edgecolor='black')
+        plt.ylim(0, max(light_minutes) * 1.2)
+
+        # Moderate activity
+        plt.subplot(2, 2, 3)
+        plt.title("Moderate Activity")
+        plt.bar(["Individual", "Group"], moderate_minutes, color='#EA5B19', edgecolor='black')
+        plt.ylim(0, max(moderate_minutes) * 1.2)
+        plt.ylabel("Minutes")
+
+        # Vigorous activity
+        plt.subplot(2, 2, 4)
+        plt.title("Vigorous Activity")
+        plt.bar(["Individual", "Group"], vigorous_minutes, color='red', edgecolor='black')
+        plt.ylim(0, max(vigorous_minutes) * 1.2)
+
 
 class AccelOnly:
 
@@ -721,6 +865,7 @@ class AccelOnly:
 
         # Data from other objects; invalid data not removed
         self.ankle_intensity = None
+        self.ankle_intensity_group = None
         self.wrist_intensity = None
 
         # Data used to determine what epochs are valid
@@ -728,10 +873,12 @@ class AccelOnly:
 
         # Data that only contains valid epochs
         self.ankle = None
+        self.ankle_group = None
         self.wrist = None
 
         # Dictionaries for activity totals using valid data
         self.ankle_totals = None
+        self.ankle_totals_group = None
         self.wrist_totals = None
         self.hr_totals = None
         self.hracc_totals = None
@@ -786,9 +933,13 @@ class AccelOnly:
                 self.ankle_intensity = self.subject_object.ankle.model.epoch_intensity if \
                     self.subject_object.ankle.model.epoch_intensity is not None else None
 
+                self.ankle_intensity_group = self.subject_object.ankle.model.epoch_intensity_group if \
+                    self.subject_object.ankle.model.epoch_intensity_group is not None else None
+
         # Error handling if ankle model not run (no treadmill protocol?)
         except AttributeError:
             self.ankle_intensity = None
+            self.ankle_intensity_group = None
 
         # Wrist intensity data
         if self.subject_object.wrist_filepath is not None:
@@ -814,6 +965,8 @@ class AccelOnly:
             if self.ankle_intensity is not None and self.ankle is None:
                 self.ankle = [self.ankle_intensity[i] if self.sleep_validity[i] == 0 else None
                               for i in range(self.data_len)]
+                self.ankle_group = [self.ankle_intensity_group[i] if self.sleep_validity[i] == 0 else None
+                                    for i in range(self.data_len)]
 
             # Wrist --------------------------------------------------------------------------------------------------
             if self.wrist_intensity is not None and self.wrist is None:
@@ -826,6 +979,7 @@ class AccelOnly:
             print("No sleep data. Cannot remove sleep periods.")
 
             self.ankle = self.ankle_intensity
+            self.ankle_group = self.ankle_intensity_group
             self.wrist = self.wrist_intensity
 
     def generate_validity_report(self):
@@ -928,6 +1082,21 @@ class AccelOnly:
                                  "Vigorous": self.ankle.count(3) / epoch_to_minutes,
                                  "Vigorous%": round(self.ankle.count(3) / n_valid_epochs, 3)}
 
+            # Group regression ---------------------------------------------------------------------------------------
+            epoch_to_minutes = 60 / self.subject_object.ankle.epoch_len
+
+            n_valid_epochs = len(self.ankle_group) - self.ankle_group.count(None)
+
+            self.ankle_totals_group = {"Model": "Ankle",
+                                       "Sedentary": self.ankle_group.count(0) / epoch_to_minutes,
+                                       "Sedentary%": round(self.ankle_group.count(0) / n_valid_epochs, 3),
+                                       "Light": (self.ankle_group.count(1)) / epoch_to_minutes,
+                                       "Light%": round(self.ankle_group.count(1) / n_valid_epochs, 3),
+                                       "Moderate": self.ankle_group.count(2) / epoch_to_minutes,
+                                       "Moderate%": round(self.ankle_group.count(2) / n_valid_epochs, 3),
+                                       "Vigorous": self.ankle_group.count(3) / epoch_to_minutes,
+                                       "Vigorous%": round(self.ankle_group.count(3) / n_valid_epochs, 3)}
+
         # WRIST -------------------------------------------------------------------------------------------------------
         if self.wrist is not None:
             epoch_to_minutes = 60 / self.subject_object.wrist.epoch_len
@@ -957,6 +1126,7 @@ class AccelOnly:
             writer.writeheader()
             if self.subject_object.ankle is not None:
                 writer.writerow(self.ankle_totals)
+                writer.writerow(self.ankle_totals_group)
             if self.subject_object.wrist is not None:
                 writer.writerow(self.wrist_totals)
 
@@ -1009,3 +1179,166 @@ class AccelOnly:
 
         print("\n" + "Saved validity summary data to file {}".format(self.subject_object.output_dir) +
               str(self.subject_object.subjectID) + "_ValidityData_AccelOnly.csv")
+
+    def plot_regression_comparison(self):
+
+        # x-axis datestamp formating
+        xfmt = mdates.DateFormatter("%a, %I:%M %p")
+        locator = mdates.HourLocator(byhour=[0, 12], interval=1)
+
+        fig, (ax1, ax2) = plt.subplots(2, sharex='col', figsize=(10, 7))
+
+        fig.suptitle("Individual vs. Group Regression Comparison")
+
+        ax1.plot(self.subject_object.ankle.epoch.timestamps, self.ankle, color='black', label="Individual")
+        ax1.plot(self.subject_object.ankle.epoch.timestamps, self.ankle_group, color='red', label="Group")
+        ax1.set_xlim(self.subject_object.ankle.epoch.timestamps[0]+timedelta(seconds=3600),
+                     self.subject_object.ankle.epoch.timestamps[-1]+timedelta(seconds=3600))
+        ax1.set_ylabel("Intensity Category")
+
+        ax2.plot(self.subject_object.ankle.epoch.timestamps,
+                 [self.subject_object.ankle.model.linear_speed[i] if self.subject_object.sleep.status[i] == 0
+                  else None for i in range(len(self.subject_object.ankle.model.linear_speed))],
+                 color='black', label="Individual")
+
+        ax2.plot(self.subject_object.ankle.epoch.timestamps,
+                 [self.subject_object.ankle.model.linear_speed_group[i] if self.subject_object.sleep.status[i] == 0
+                  else None for i in range(len(self.subject_object.ankle.model.linear_speed_group))],
+                 color='red', label='Group')
+
+        ax2.set_xlim(self.subject_object.ankle.epoch.timestamps[0]+timedelta(seconds=3600),
+                     self.subject_object.ankle.epoch.timestamps[-1]+timedelta(seconds=3600))
+        ax2.set_ylabel("Predicted Speed (m/s)")
+
+        ax2.xaxis.set_major_formatter(xfmt)
+        ax2.xaxis.set_major_locator(locator)
+        plt.xticks(rotation=45, fontsize=6)
+
+        if self.subject_object.sleeplog_file is not None:
+
+            for day1, day2 in zip(self.subject_object.sleep.data[:], self.subject_object.sleep.data[1:]):
+                try:
+                    # Overnight sleep
+                    ax1.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, 4), color='green', alpha=0.35)
+                    ax2.fill_betweenx(x1=day1[3], x2=day2[0], y=np.arange(0, 4), color='green', alpha=0.35)
+
+                    # Daytime naps
+                    ax1.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, 4), color='green', alpha=0.35)
+                    ax2.fill_betweenx(x1=day1[2], x2=day1[1], y=np.arange(0, 4), color='green', alpha=0.35)
+
+                except (AttributeError, TypeError):
+                    pass
+
+    def plot_regression_totals_comparison(self):
+
+        sedentary_minutes = [self.ankle_totals["Sedentary"], self.ankle_totals_group["Sedentary"]]
+
+        light_minutes = [self.ankle_totals["Light"], self.ankle_totals_group["Light"]]
+
+        moderate_minutes = [self.ankle_totals["Moderate"], self.ankle_totals_group["Moderate"]]
+
+        vigorous_minutes = [self.ankle_totals["Vigorous"], self.ankle_totals_group["Vigorous"]]
+
+        plt.subplots(2, 2, figsize=(10, 7))
+        plt.suptitle("Participant {}: Valid Only Data".format(self.subject_object.subjectID))
+
+        # Sedentary activity
+        plt.subplot(2, 2, 1)
+        plt.title("Sedentary")
+        plt.bar(["Individual", "Group"], sedentary_minutes, color='grey', edgecolor='black')
+        plt.ylim(0, max(sedentary_minutes) * 1.2)
+        plt.ylabel("Minutes")
+
+        # Light activity
+        plt.subplot(2, 2, 2)
+        plt.title("Light Activity")
+        plt.bar(["Individual", "Group"], light_minutes, color='green', edgecolor='black')
+        plt.ylim(0, max(light_minutes) * 1.2)
+
+        # Moderate activity
+        plt.subplot(2, 2, 3)
+        plt.title("Moderate Activity")
+        plt.bar(["Individual", "Group"], moderate_minutes, color='#EA5B19', edgecolor='black')
+        plt.ylim(0, max(moderate_minutes) * 1.2)
+        plt.ylabel("Minutes")
+
+        # Vigorous activity
+        plt.subplot(2, 2, 4)
+        plt.title("Vigorous Activity")
+        plt.bar(["Individual", "Group"], vigorous_minutes, color='red', edgecolor='black')
+        plt.ylim(0, max(vigorous_minutes) * 1.2)
+
+    def plot_accel_ecg_quality(self):
+        """Plots raw ankle and wrist accelerometer data, raw ECG data, and ECG validity status."""
+
+        fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, sharex='col', figsize=(10, 7))
+
+        xfmt = mdates.DateFormatter("%a %b %d, %H:%M")
+        locator = mdates.HourLocator(byhour=[0, 8, 16], interval=1)
+
+        ax1.set_title("Participant {}: Movement's effect on ECG validity".format(self.subjectID))
+
+        if self.wrist_filepath is not None and self.load_raw_wrist:
+            ax1.plot(self.wrist.raw.timestamps[::3], self.wrist.raw.x[::3], color='black',
+                     label='Wrist ({}Hz)'.format(int(self.wrist.raw.sample_rate) / 3))
+            ax1.set_ylabel("G's")
+            ax1.legend(loc='upper left')
+            ax1.set_ylim(-8, 8)
+
+        if self.ankle_filepath is not None and self.load_raw_ankle:
+            ax2.plot(self.ankle.raw.timestamps[::3], self.ankle.raw.x[::3], color='black',
+                     label='Ankle ({}Hz'.format(int(self.ankle.raw.sample_rate) / 3))
+            ax2.set_ylabel("G's")
+            ax2.legend(loc='upper left')
+            ax2.set_ylim(-8, 8)
+
+        if self.ecg_filepath is not None and self.load_raw_ecg:
+            ax3.plot(self.ecg.timestamps[::5], self.ecg.filtered[::5], color='red',
+                     label='ECG ({}Hz, filtered)'.format(int(self.ecg.sample_rate) / 5))
+            ax3.set_ylabel("Voltage")
+            ax3.legend(loc='upper left')
+
+        if self.ecg_filepath is not None and self.load_raw_wrist and self.ecg.epoch_validity is not None:
+            ax4.plot(self.ecg.epoch_timestamps, self.ecg.epoch_validity, color='black', label="ECG Validity")
+            ax4.fill_between(x=self.ecg.epoch_timestamps, y1=0, y2=self.ecg.epoch_validity, color='grey')
+            ax4.set_ylabel("1 = invalid")
+            ax4.legend(loc='upper left')
+
+        ax4.xaxis.set_major_formatter(xfmt)
+        ax4.xaxis.set_major_locator(locator)
+        plt.xticks(rotation=45, fontsize=6)
+
+    def plot_treadmill_protocol(self):
+
+        if not self.load_ankle:
+            print("No ankle data available.")
+
+        if self.load_ankle:
+
+            fig, (ax1, ax2, ax3) = plt.subplots(3, sharex='col')
+
+            start_index = int(self.ankle.treadmill.walk_indexes[0] - 5 * (60 / self.epoch_len))
+            if start_index < 0:
+                start_index = 0
+
+            end_index = int(self.ankle.treadmill.walk_indexes[-1] + 5 * (60 / self.epoch_len))
+
+            plt.suptitle("Participant {}: HR and Accel Data during Treadmill Protocol".format(self.subjectID))
+
+            if self.wrist_filepath is not None:
+                ax1.plot(self.wrist.epoch.timestamps[start_index:end_index],
+                         self.wrist.epoch.svm[start_index:end_index], label="Wrist", color='black')
+                ax1.set_ylabel("Counts")
+                ax1.legend(loc='upper left')
+
+            ax2.plot(self.ankle.epoch.timestamps[start_index:end_index],
+                     self.ankle.epoch.svm[start_index:end_index], label="Ankle", color='black')
+            ax2.set_ylabel("Counts")
+            ax2.legend(loc='upper left')
+
+            if self.load_ecg:
+                ax3.plot(self.ecg.epoch_timestamps[start_index:end_index],
+                         self.ecg.epoch_hr[start_index:end_index], label="HR", color='red')
+                ax3.set_ylabel("HR (bpm)")
+
+            plt.show()
