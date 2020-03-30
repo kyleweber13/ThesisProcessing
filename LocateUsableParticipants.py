@@ -73,4 +73,7 @@ def find_usable(check_file=None, require_ecg=False, require_wrist=False, require
 
     usable_list = [i.split("_")[2] for i in usable_list]
 
+    # Returns unique values as a list
+    usable_list = [i for i in set(usable_list)]
+
     return usable_list
