@@ -343,7 +343,7 @@ class Ankle:
     def write_model(self):
 
         if not self.accel_only:
-            out_filename = self.model.anklemodel_outfile
+            out_filename = self.output_dir + self.filename.split(".")[0].split("/")[-1] + "_IntensityData.csv"
         if self.accel_only:
             out_filename = self.output_dir + self.filename.split(".")[0].split("/")[-1] + \
                            "_IntensityData_AccelOnly.csv"
@@ -561,6 +561,9 @@ class AnkleModel:
         self.walk_indexes = None
         self.write_results = write_results
 
+        self.ind_regression_line = None
+        self.group_regression_line = None
+
         if ecg_object is not None:
             self.valid_ecg = ecg_object.epoch_validity
         if ecg_object is None:
@@ -578,8 +581,8 @@ class AnkleModel:
             # Values from regression equation
             self.r2 = None
 
-            # Individual calibration
-            self.linear_dict, self.linear_speed = self.calculate_linear_regression()
+            # Individual regression ----------------------------------------------------------------------------------
+            self.linear_dict, self.linear_speed, self.ind_regression_line = self.calculate_linear_regression()
             self.quad_dict, self.quad_speed = self.calculate_quad_regression()
             self.log_dict, self.log_speed = None, None
 
@@ -590,8 +593,11 @@ class AnkleModel:
             self.epoch_intensity_valid = None
             self.intensity_totals_valid = None
 
-            # Group regression
-            self.linear_speed_group = self.calculate_group_regression()
+            # Group regression ----------------------------------------------------------------------------------------
+            self.linear_speed_group, self.group_regression_line = self.calculate_group_regression()
+
+            self.predicted_mets_group, self.epoch_intensity_group, self.intensity_totals_groups = \
+                self.calculate_intensity(predicted_speed=self.linear_speed_group)
 
         except IndexError:
             pass
@@ -688,7 +694,10 @@ class AnkleModel:
                            "Vigorous speed": round(vig_speed, 3), "Vigorous counts": vig_counts,
                            "Meaningful threshold": meaningful_threshold}
 
-        return linear_reg_dict, above_sed_thresh
+        ind_regression_line = [linear_reg_dict["a"] * svm + linear_reg_dict["b"]
+                               for svm in range(int(min(self.epoch_data)), int(max(self.epoch_data)))]
+
+        return linear_reg_dict, above_sed_thresh, ind_regression_line
 
     def counts_to_speed(self, count):
 
@@ -952,7 +961,7 @@ class AnkleModel:
 
         # SUMMARY METRICS ---------------------------------------------------------------------------------------------
 
-        print("\n" + "Group-tevel treadmill regression")
+        print("\n" + "Group-level treadmill regression")
 
         print("-Equation: y = {}x + {}BMI + {}".format(counts_coef, bmi_coef, y_intercept))
 
@@ -982,9 +991,12 @@ class AnkleModel:
             if counts < meaningful_threshold:
                 above_sed_thresh.append(0)
 
-        return above_sed_thresh
+        group_reg_line = [0.00135 * svm + -0.021696531091255 * self.bmi + 0.88281
+                          for svm in np.arange(min(self.epoch_data), max(self.epoch_data))]
 
-    def plot_regression_comparison(self):
+        return above_sed_thresh, group_reg_line
+
+    def plot_regression_line_comparison(self):
 
         plt.plot(np.arange(min(self.epoch_data), max(self.epoch_data)),
                  [self.linear_dict["a"]*i + self.linear_dict["b"]
