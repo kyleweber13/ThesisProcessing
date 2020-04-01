@@ -376,6 +376,7 @@ class Treadmill:
         self.epoch_data = ankle_object.epoch.svm
         self.epoch_timestamps = ankle_object.epoch.timestamps
         self.walk_indexes = []
+        self.valid_data = False
 
         # Creates treadmill dictionary and walk speed data from spreadsheet data
         self.treadmill_dict, self.walk_speeds, self.walk_indexes = self.import_log()
@@ -390,12 +391,10 @@ class Treadmill:
         log = np.loadtxt(fname=self.log_file, delimiter=",", dtype="str",
                          usecols=(0, 3, 6, 9, 11, 13, 15, 17, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31), skiprows=1)
 
-        valid_data = False
-
         for row in log:
             # Only retrieves information for correct subject since all participants in one spreadsheet
             if str(self.subjectID) in row[0]:
-                valid_data = True  # Data was found
+                self.valid_data = True  # Data was found
                 date = row[1][0:4] + "/" + str(row[1][4:7]).title() + "/" + row[1][7:] + " " + row[2]
                 date_formatted = (datetime.strptime(date, "%Y/%b/%d %H:%M"))
 
@@ -427,7 +426,7 @@ class Treadmill:
                     pass
 
         # Sets treadmill_dict, walk_indexes and walk_speeds to empty objects if no treadmill data found in log
-        if not valid_data:
+        if not self.valid_data:
             treadmill_dict = {"File": "N/A", "ProtocolTime": "N/A",
                               "StartIndex": "N/A",
                               "60%": "N/A", "80%": "N/A",
@@ -571,7 +570,8 @@ class AnkleModel:
 
         self.output_dir = ankle_object.output_dir
 
-        try:
+        if self.tm_object.valid_data:
+
             # Index multiplier for different epoch lengths since treadmill data processed with 15-second epochs
             self.walk_indexes = self.scale_epoch_indexes()
 
@@ -589,18 +589,24 @@ class AnkleModel:
             self.predicted_mets, self.epoch_intensity, \
                 self.intensity_totals = self.calculate_intensity(self.linear_speed)
 
-            # Predicted outcome measures from linear regression
-            self.epoch_intensity_valid = None
-            self.intensity_totals_valid = None
-
             # Group regression ----------------------------------------------------------------------------------------
             self.linear_speed_group, self.group_regression_line = self.calculate_group_regression()
 
             self.predicted_mets_group, self.epoch_intensity_group, self.intensity_totals_groups = \
                 self.calculate_intensity(predicted_speed=self.linear_speed_group)
 
-        except IndexError:
-            pass
+        if not self.tm_object.valid_data:
+
+            print("\nNO VALID TREADMILL DATA FOUND - INDIVIDUAL DATA = GROUP DATA TO PREVENT ERRORS")
+            # Group regression ----------------------------------------------------------------------------------------
+            self.linear_speed_group, self.group_regression_line = self.calculate_group_regression()
+
+            self.predicted_mets_group, self.epoch_intensity_group, self.intensity_totals_groups = \
+                self.calculate_intensity(predicted_speed=self.linear_speed_group)
+
+            # Sets individual regression values to group regression values
+            self.epoch_intensity = self.epoch_intensity_group
+            self.intensity_totals = self.intensity_totals_groups
 
     def scale_epoch_indexes(self):
         """Scales treadmill walk indexes if epoch length is not 15 seconds. Returns new list."""
@@ -949,12 +955,18 @@ class AnkleModel:
         """
 
         # Reshapes data to work with
-        counts = np.array(self.tm_object.avg_walk_counts).reshape(-1, 1)
-        speed = np.array(self.tm_object.walk_speeds).reshape(-1, 1)  # m/s
+        try:
+            counts = np.array(self.tm_object.avg_walk_counts).reshape(-1, 1)
+            speed = np.array(self.tm_object.walk_speeds).reshape(-1, 1)  # m/s
 
-        # Linear regression using sklearn
-        lm = linear_model.LinearRegression()
-        model = lm.fit(counts, speed)
+            # Linear regression using sklearn
+            lm = linear_model.LinearRegression()
+            model = lm.fit(counts, speed)
+        except (AttributeError, ValueError):
+            counts = []
+            speed = []
+
+        # Regression values
         y_intercept = 0.88281
         counts_coef = 0.00135
         bmi_coef = -0.021696531091255
@@ -963,7 +975,7 @@ class AnkleModel:
 
         print("\n" + "Group-level treadmill regression")
 
-        print("-Equation: y = {}x + {}BMI + {}".format(counts_coef, bmi_coef, y_intercept))
+        print("-Equation: y = {}(count) + {}(BMI) + {}".format(counts_coef, bmi_coef, y_intercept))
 
         # Calculates count and speed limits for different intensity levels
         light_speed = ((1.5 * self.rvo2 - self.rvo2) / 0.1) / 60  # m/s
@@ -977,13 +989,17 @@ class AnkleModel:
         above_sed_thresh = []
 
         # Threshold corresponding to a 5-second walk at preferred speed
-        meaningful_threshold = round(self.tm_object.avg_walk_counts[2] / (self.epoch_len / 5), 2)
+        try:
+            meaningful_threshold = round(self.tm_object.avg_walk_counts[2] / (self.epoch_len / 5), 2)
 
-        # Sets threshold to either meaningful_threshold OR light_counts based on which is greater
-        if meaningful_threshold >= self.linear_dict["Light counts"]:
-            meaningful_threshold = meaningful_threshold
-        if meaningful_threshold < self.linear_dict["Light counts"]:
-            meaningful_threshold = self.linear_dict["Light counts"]
+            # Sets threshold to either meaningful_threshold OR light_counts based on which is greater
+            if meaningful_threshold >= self.linear_dict["Light counts"]:
+                meaningful_threshold = meaningful_threshold
+            if meaningful_threshold < self.linear_dict["Light counts"]:
+                meaningful_threshold = self.linear_dict["Light counts"]
+
+        except (ValueError, AttributeError, IndexError):
+            meaningful_threshold = 100
 
         for speed, counts in zip(linear_predicted_speed, self.epoch_data):
             if counts >= meaningful_threshold:
@@ -991,7 +1007,7 @@ class AnkleModel:
             if counts < meaningful_threshold:
                 above_sed_thresh.append(0)
 
-        group_reg_line = [0.00135 * svm + -0.021696531091255 * self.bmi + 0.88281
+        group_reg_line = [counts_coef * svm + bmi_coef * self.bmi + y_intercept
                           for svm in np.arange(min(self.epoch_data), max(self.epoch_data))]
 
         return above_sed_thresh, group_reg_line
