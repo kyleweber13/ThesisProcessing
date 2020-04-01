@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.dates as mdates
 import csv
 import statistics
+from datetime import datetime
 
 
 class DailyReport:
@@ -378,7 +379,7 @@ class DailyReport:
         def gen_activity_label(rects, value):
             for rect in rects:
                 height = rect.get_height()
-                plt.annotate('{} \n hours'.format(round(value/60, 2)),
+                plt.annotate('{} \n hours'.format(round(value, 2)),
                              xy=(rect.get_x() + rect.get_width() / 2, height / 2),
                              xytext=(0, 0),
                              textcoords="offset points", color='black',
@@ -426,3 +427,146 @@ class DailyReport:
             plt.title("Activity by Day")
             plt.yticks(np.arange(0, 110, 10))
             plt.ylabel("% of waking hours")
+
+    def plot_week_activity_only(self, day_definition="sleep"):
+        plt.close('all')
+
+        # Which data to use
+        if day_definition == "Sleep" or day_definition == "sleep":
+            df = self.report_sleep_df
+        if day_definition == "Date" or day_definition == "date":
+            df = self.report_df
+
+        # DATA LABELS ------------------------------------------------------------------------------------------------
+        def gen_sleep_label(rects, value):
+            for rect in rects:
+                height = rect.get_height()
+
+                hours = int(np.floor(value))
+                minutes = (value - hours) * 60
+                # plt.annotate('{} \n hours'.format(round(value, 1)),
+                plt.annotate('{} hours\n{} mins'.format(int(hours), int(minutes)),
+                             xy=(rect.get_x() + rect.get_width() / 2, height / 2),
+                             xytext=(0, 0),
+                             textcoords="offset points", color='white',
+                             ha='center', va='center')
+
+        def gen_light_label(rects, value):
+            for rect in rects:
+                delta_height = rect.get_height() - df.iloc[day]["Wrist MVPA Minutes"]
+
+                if rect.get_height() == 0:
+                    return None
+
+                plt.annotate('{}\nmins'.format(int(value)),
+                             xy=(rect.get_x() + rect.get_width() / 2, rect.get_height() - delta_height / 2),
+                             xytext=(0, 0),
+                             textcoords="offset points", color='black',
+                             ha='center', va='center')
+
+        def gen_mvpa_label(rects, value):
+            for rect in rects:
+                height = rect.get_height()
+
+                if height == 0:
+                    return None
+
+                plt.annotate('{}\nmins'.format(int(value)),
+                             xy=(rect.get_x() + rect.get_width() / 2, height / 2),
+                             xytext=(0, 0),
+                             textcoords="offset points", color='black',
+                             ha='center', va='center')
+
+        def gen_total_label(rects, value):
+            for rect in rects:
+                height = rect.get_height()
+
+                if height == 0:
+                    return None
+
+                plt.annotate('{}\ntotal\nmins'.format(int(value)),
+                             xy=(rect.get_x() + rect.get_width() / 2, height),
+                             xytext=(0, 20),
+                             textcoords="offset points", color='black',
+                             ha='center', va='center')
+
+        def gen_invalid_label(rects):
+            for rect in rects:
+                height = max(df["Wrist Active Minutes"] / 2)
+
+                plt.annotate('Not \n enough \n data \n today',
+                             xy=(rect.get_x() + rect.get_width() / 2, height),
+                             xytext=(0, 16),
+                             textcoords="offset points", color='black',
+                             ha='center', va='center')
+
+        # PLOTTING ---------------------------------------------------------------------------------------------------
+        plt.subplots(1, 2, figsize=(12, 7))
+        plt.rcParams.update({'font.size': 12})
+
+        plt.subplots_adjust(bottom=0.16, wspace=0.29)
+        plt.suptitle("Subject {}: Weekly Report".format(self.subjectID))
+
+        # SLEEP DATA -------------------------------------------------------------------------------------------------
+        plt.subplot(1, 2, 1)
+
+        for day in range(0, df.shape[0]):
+            day_label = datetime.strftime(df.iloc[day]["Day Start"].date(), "%a., %b. %d")
+
+            # Doesn't plot final day if value is 0
+            if df.iloc[day]["Sleep Minutes"] == 0 and day == df.shape[0]-1:
+                break
+
+            sleep_plot = plt.bar(x=day_label, height=df.iloc[day]["Sleep Minutes"]/60,
+                                 color="#314A97", edgecolor='black', linewidth=1.5)
+            gen_sleep_label(rects=sleep_plot, value=df.iloc[day]["Sleep Minutes"]/60)
+
+        plt.ylabel("Hours per Night")
+        plt.title("Sleep")
+        plt.yticks(np.arange(0, max(df["Sleep Minutes"]) * 1.1, 1))
+        plt.ylim(0, max(df["Sleep Minutes"]) / 60 * 1.1)
+        plt.xticks(rotation=45, fontsize=12)
+
+        # WRIST ACTIVITY DATA -----------------------------------------------------------------------------------------
+        plt.subplot(1, 2, 2)
+        plt.rcParams.update({'font.size': 12})
+
+        for day in range(0, df.shape[0]):
+
+            day_label = datetime.strftime(df.iloc[day]["Day Start"].date(), "%a., %b. %d")
+
+            light_hours = df.iloc[day]["Wrist Active Minutes"] - df.iloc[day]["Wrist MVPA Minutes"]
+
+            # Plots blank spot if day was < 6 hours
+            if df.iloc[day]["Period Length (H)"] < 6:
+                # Doesn't plot final at all day if day was < 6 hours
+                if day == df.shape[0]-1:
+                    break
+
+                # Blank spot with "Not enough data today" label
+                light = plt.bar(x=day_label, height=0, color='white', alpha=0.0, edgecolor='black')
+                gen_invalid_label(rects=light)
+
+            # Days longer than 6 hours
+            if df.iloc[day]["Period Length (H)"] >= 6:
+
+                # Light activity -----------------------------------------------------------
+                light = plt.bar(x=day_label, height=df.iloc[day]["Wrist Active Minutes"],
+                                color="darkgrey", alpha=.75, edgecolor='black', linewidth=1.5)
+                gen_light_label(rects=light, value=light_hours)
+
+                # MVPA ---------------------------------------------------------------------
+                mvpa = plt.bar(x=day_label, height=df.iloc[day]["Wrist MVPA Minutes"],
+                               color="gold", edgecolor='black', linewidth=1.5)
+                gen_mvpa_label(rects=mvpa, value=df.iloc[day]["Wrist MVPA Minutes"])
+
+                # Total - for label; no bar seen
+                total = plt.bar(x=day_label, height=df.iloc[day]["Wrist Active Minutes"],
+                                color='white', edgecolor='black', alpha=0)
+                gen_total_label(rects=total, value=df.iloc[day]["Wrist Active Minutes"])
+
+            plt.legend(loc='upper right', labels=["Light", "Mod/Vig"])
+            plt.title("Daily Physical Activity")
+            plt.xticks(rotation=45, fontsize=12)
+            plt.ylim(0, max(df["Wrist Active Minutes"])*1.3)
+            plt.ylabel("Minutes per Day")
