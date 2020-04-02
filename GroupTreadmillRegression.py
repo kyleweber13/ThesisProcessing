@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 from sklearn import metrics
 import seaborn as sb
+from scipy.stats import pearsonr as r
 from scipy.stats import t
 from mpl_toolkits.mplot3d import Axes3D
 
@@ -13,6 +14,7 @@ class Regression:
     def __init__(self, data_file=None):
 
         self.data = None
+        self.pref_data = None
         self.measured_values = None
         self.predictor_values = None
 
@@ -31,13 +33,19 @@ class Regression:
         self.rmse = None
         self.confidence_interval = 0
 
+        self.ind_rmse = None
+        self.ind_rmse_corr_mat = None
+
         self.import_data(data_file=data_file)
         self.calculate_regression()
+        self.ind_rmse, self.ind_rmse_corr_mat = self.calculate_individual_rmse()
 
     def import_data(self, data_file):
 
         self.data = pd.read_excel(io=data_file, sheet_name="Test",
                                   names=["Subject", "Age", "Height", "Weight", "BMI", "Counts", "Speed"])
+
+        self.pref_data = self.data.iloc[2::5]
 
     def calculate_regression(self):
 
@@ -54,11 +62,11 @@ class Regression:
         self.bmi_coef = coeff_df["Coefficient"]["BMI"]
         self.y_int = regressor.intercept_
 
-        self.equation = str(round(self.counts_coef, 5)) + " x counts + " + \
-                        str(round(self.bmi_coef, 15)) + " x BMI (kg/m/m) + " + \
+        self.equation = str(round(self.counts_coef, 5)) + " x counts/15s + " + \
+                        str(round(self.bmi_coef, 15)) + " x BMI (kg/m2) + " + \
                         str(round(self.y_int, 5))
 
-        print(self.equation)
+        print("\nGait speed (m/s) = ", self.equation)
 
         self.predicted_values = regressor.predict(self.predictor_values)
         self.residuals = [measured - predicted for measured, predicted in
@@ -80,7 +88,9 @@ class Regression:
 
     def plot_regression(self):
 
+        # plt.subplot()
         sb.lmplot(x="Counts", y="Speed", data=self.data, height=6.5, aspect=1.5)
+        plt.subplots_adjust(top=0.94)
         plt.scatter(self.data["Counts"], self.predicted_values, color='red')
         plt.legend(labels=["Regression line", "Measured", "95%CI", "Predicted"], loc='upper left')
         plt.ylabel("Speed (m/s)")
@@ -98,7 +108,7 @@ class Regression:
         ax.set_zlabel("Speed (m/s)")
         ax.set_title("Group Level Multiple Linear Regression")
 
-    def plot_corr_matrix(self):
+    def plot_regression_corr_matrix(self):
 
         df = pd.DataFrame(self.data, columns=["Height", "Weight", "BMI", "Counts", "Speed"])
 
@@ -114,5 +124,40 @@ class Regression:
         plt.ylabel("Error (m/s)")
         plt.title("Multiple Linear Regression Error Measures")
 
+    def calculate_individual_rmse(self):
 
-x = Regression("/Users/kyleweber/Desktop/Data/OND07/Processed Data/TreadmillRegressionGroup.xlsx")
+        rmse_list = []
+        rmse_perc_pref = []
+
+        for start_ind in range(self.data.shape[0])[::5]:
+            counts = [i for i in self.data.iloc[start_ind:start_ind + 5]["Counts"]]
+
+            pred_values = [self.calculate_value(count_value=count, bmi=self.data.iloc[start_ind]["BMI"])
+                           for count in counts]
+
+            true_speed = [i for i in self.data.iloc[start_ind:start_ind + 5]["Speed"]]
+
+            rmse = np.sqrt(metrics.mean_squared_error(y_true=true_speed, y_pred=pred_values))
+            rmse_list.append(float(rmse))
+            rmse_perc_pref.append(float(100 * rmse / self.data.iloc[start_ind + 2]["Speed"]))
+
+        pref_speeds = [self.pref_data.iloc[i]["Speed"] for i in range(self.pref_data.shape[0])]
+        heights = [self.pref_data.iloc[i]["Height"] for i in range(self.pref_data.shape[0])]
+
+        r_value = round(r(pref_speeds, rmse_perc_pref)[0], 3)
+
+        rmse_df = pd.DataFrame(list(zip(self.pref_data["Subject"], self.pref_data["Age"],
+                                        self.pref_data["Height"], self.pref_data["Weight"],
+                                        self.pref_data["BMI"], pref_speeds, rmse_list, rmse_perc_pref)),
+                               columns=["Subject", "Age", "Height", "Weight", "BMI",
+                                        "Pref Speed", "RMSE", "RMSE (% Pref)"])
+
+        corr_mat = rmse_df[["Pref Speed", "RMSE", "RMSE (% Pref)"]].corr()
+
+        sb.heatmap(corr_mat, cmap="RdYlGn", annot=True)
+        plt.title("Individual Participant Correlations")
+
+        return rmse_df, corr_mat
+
+
+# x = Regression("/Users/kyleweber/Desktop/Data/OND07/Processed Data/TreadmillRegressionGroup.xlsx")
