@@ -25,6 +25,7 @@ class AllDevices:
         self.epoch_timestamps = None
 
         # Data from other objects; invalid data not removed
+        self.ankle_svm = None
         self.ankle_intensity = None
         self.ankle_intensity_group = None
         self.wrist_intensity = None
@@ -34,6 +35,7 @@ class AllDevices:
         # Data used to determine what epochs are valid
         self.hr_validity = None
         self.sleep_validity = None
+        self.nonwear_validity = None
 
         # Data that only contains valid epochs
         self.ankle = None
@@ -58,6 +60,8 @@ class AllDevices:
 
         self.hr_validity_counts = None
 
+        self.avg_ankle_counts = 0
+
         # =============================================== RUNS METHODS ================================================
 
         # Organizing data depending on what data are available
@@ -69,8 +73,7 @@ class AllDevices:
             self.remove_invalid_hr()
 
         # Removal based on sleep data
-        if self.subject_object.sleeplog_file is not None:
-            self.remove_invalid_sleep()
+        self.remove_invalid_sleep_and_nonwear()
 
         self.recalculate_activity_totals()
 
@@ -80,6 +83,8 @@ class AllDevices:
 
         self.calculate_ankle_hracc_diff()
         self.calculate_hr_hracc_diff()
+
+        self.calculate_average_valid_ankle_counts()
 
         if self.write_results:
             self.write_activity_totals()
@@ -120,6 +125,10 @@ class AllDevices:
                 self.ankle_intensity = self.subject_object.ankle.model.epoch_intensity if \
                     self.subject_object.ankle.model.epoch_intensity is not None else None
 
+                self.ankle_svm = self.subject_object.ankle.epoch.svm if \
+                    self.subject_object.ankle.epoch.svm is not None else None
+
+                # Group regression
                 self.ankle_intensity_group = self.subject_object.ankle.model.epoch_intensity_group if \
                     self.subject_object.ankle.model.epoch_intensity_group is not None else None
 
@@ -152,6 +161,10 @@ class AllDevices:
             self.sleep_validity = self.subject_object.sleep.status if \
                 self.subject_object.sleep.status is not None else None
 
+        if self.subject_object.nonwear_file is not None:
+            self.nonwear_validity = self.subject_object.nonwear.status if \
+                self.subject_object.nonwear.status is not None else None
+
     def remove_invalid_hr(self):
         """Removes invalid epochs from Ankle and Wrist data based on HR validity."""
 
@@ -164,6 +177,8 @@ class AllDevices:
             self.ankle_group = [self.ankle_intensity_group[i] if self.hr_validity[i] == 0
                                 else None for i in range(self.data_len)]
 
+            self.ankle_svm = [self.ankle_svm[i] if self.hr_validity[i] == 0 else None for i in range(self.data_len)]
+
         if self.wrist_intensity is not None:
             self.wrist = [self.wrist_intensity[i] if self.hr_validity[i] == 0 else None for i in range(self.data_len)]
 
@@ -172,49 +187,76 @@ class AllDevices:
 
         print("Complete.")
 
-    def remove_invalid_sleep(self):
+    def remove_invalid_sleep_and_nonwear(self):
         """Removes invalid epochs from Ankle, Wrist, and HR data based on sleep validity.
            If invalid data has been removed using HR data, this method further removes invalid periods due to sleep.
            If invalid data has not been removed using HR data, this method removes invalid periods due to sleep from
            the "raw" data.
         """
 
-        print("\n" + "Removing epochs during sleep...")
+        if self.subject_object.sleeplog_file is not None and self.subject_object.nonwear_file is None:
+            print("\n" + "Removing epochs during sleep...")
+        if self.subject_object.sleeplog_file is None and self.subject_object.nonwear_file is not None:
+            print("\n" + "Removing epochs during non-wear...")
+        if self.subject_object.sleeplog_file is not None and self.subject_object.nonwear_file is not None:
+            print("\n" + "Removing epochs during sleep and during non-wear...")
+        if self.subject_object.sleeplog_file is  None and self.subject_object.nonwear_file is None:
+            print("\nNo sleep or non-wear data to use...")
+
+        if self.subject_object.nonwear_file is None:
+            self.nonwear_validity = np.zeros(len(self.epoch_timestamps))
+        if self.subject_object.sleeplog_file is None:
+            self.sleep_validity = np.zeros(len(self.epoch_timestamps))
 
         # Ankle -------------------------------------------------------------------------------------------------------
         # If ankle data available and invalid data was not removed using HR
         if self.ankle_intensity is not None and self.ankle is None:
-            self.ankle = [self.ankle_intensity[i] if self.sleep_validity[i] == 0 else None
+            self.ankle = [self.ankle_intensity[i] if
+                          self.sleep_validity[i] == 0 and self.nonwear_validity[i] == 0 else None
                           for i in range(self.data_len)]
-            self.ankle_group = [self.ankle_intensity_group[i] if self.sleep_validity[i] == 0 else None
+
+            self.ankle_group = [self.ankle_intensity_group[i] if
+                                self.sleep_validity[i] == 0 and self.nonwear_validity[i] == 0 else None
                                 for i in range(self.data_len)]
+
+            self.ankle_svm = [self.ankle_svm[i] if self.sleep_validity[i] == 0 and self.nonwear_validity[i] == 0
+                              else None for i in range(self.data_len)]
 
         # If ankle data available and invalid data was removed
         if self.ankle_intensity is not None and self.ankle is not None:
-            self.ankle = [self.ankle[i] if self.sleep_validity[i] == 0 else None for i in range(self.data_len)]
-            self.ankle_group = [self.ankle_group[i] if self.sleep_validity[i] == 0
+            self.ankle = [self.ankle[i] if self.sleep_validity[i] == 0 and self.nonwear_validity[i] == 0
+                          else None for i in range(self.data_len)]
+
+            self.ankle_group = [self.ankle_group[i] if self.sleep_validity[i] == 0 and self.nonwear_validity[i] == 0
                                 else None for i in range(self.data_len)]
+
+            self.ankle_svm = [self.ankle_svm[i] if self.sleep_validity[i] == 0 and self.nonwear_validity[i] == 0
+                              else None for i in range(self.data_len)]
 
         # Wrist ------------------------------------------------------------------------------------------------------
         # If wrist data available and invalid data was not removed using HR
         if self.wrist_intensity is not None and self.wrist is None:
-            self.wrist = [self.wrist_intensity[i] if self.sleep_validity[i] == 0 else None
-                          for i in range(self.data_len)]
+            self.wrist = [self.wrist_intensity[i] if self.sleep_validity[i] == 0 and self.nonwear_validity[i] == 0
+                          else None for i in range(self.data_len)]
 
         # If wrist data available and invalid data was removed using HR
         if self.wrist_intensity is not None and self.wrist is not None:
-            self.wrist = [self.wrist[i] if self.sleep_validity[i] == 0 else None for i in range(self.data_len)]
+            self.wrist = [self.wrist[i] if self.sleep_validity[i] == 0 and self.nonwear_validity[i] == 0
+                          else None for i in range(self.data_len)]
 
         # Heart Rate -------------------------------------------------------------------------------------------------
         if self.hr_intensity is not None and self.hr is None:
-            self.hr = [self.hr_intensity[i] if self.sleep_validity[i] == 0 else None for i in range(self.data_len)]
+            self.hr = [self.hr_intensity[i] if self.sleep_validity[i] == 0 and self.nonwear_validity[i] == 0
+                       else None for i in range(self.data_len)]
 
         if self.hr_intensity is not None and self.hr is not None:
-            self.hr = [self.hr[i] if self.sleep_validity[i] == 0 else None for i in range(self.data_len)]
+            self.hr = [self.hr[i] if self.sleep_validity[i] == 0 and self.nonwear_validity[i] == 0
+                       else None for i in range(self.data_len)]
 
         # HR-ACC -----------------------------------------------------------------------------------------------------
         if self.hracc_intensity is not None:
-            self.hr_acc = [self.hracc_intensity[i] if self.sleep_validity[i] == 0 else None
+            self.hr_acc = [self.hracc_intensity[i] if self.sleep_validity[i] == 0 and self.nonwear_validity[i] == 0
+                           else None
                            for i in range(self.data_len)]
 
         print("Complete.")
@@ -359,6 +401,10 @@ class AllDevices:
         self.validity_dict["Wrist Counts (t)"] = wrist_ttest_t
         self.validity_dict["Wrist Counts (p)"] = wrist_ttest_p
 
+    def calculate_average_valid_ankle_counts(self):
+
+        self.avg_ankle_counts = np.mean([i for i in self.ankle_svm if i is not None])
+
     def plot_validity_comparison(self):
 
         plt.bar(x=["Valid Wrist", "Invalid Wrist", "Valid Ankle", "Invalid Ankle"],
@@ -381,14 +427,30 @@ class AllDevices:
 
         fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, sharex='col', figsize=(10, 7))
 
-        if self.subject_object.sleeplog_file is None:
-            ax1.set_title("Participant {}: Valid Data ({}% valid) (no sleep data)".format(self.subject_object.subjectID,
-                                                                                          self.percent_valid))
+        ax1.set_title("Ankle Data")
+        ax2.set_title("Wrist Data")
+        ax3.set_title("HR Data")
+        ax4.set_title("HR-Accelerometer Data")
+        plt.subplots_adjust(hspace=0.34)
+
+        if self.subject_object.sleeplog_file is None and self.subject_object.nonwear_file is None:
+            plt.suptitle("Participant {}: All Devices Valid Data ({}% valid) "
+                         "(no sleep or non-wear data)".format(self.subject_object.subjectID, self.percent_valid))
+
+        if self.subject_object.sleeplog_file is None and self.subject_object.nonwear_file is not None:
+            plt.suptitle("Participant {}: All Devices Valid Data ({}% valid) "
+                         "(grey=non-wear)".format(self.subject_object.subjectID, self.percent_valid))
+
+        if self.subject_object.sleeplog_file is not None and self.subject_object.nonwear_file is not None:
+            plt.suptitle("Participant {}: All Devices Valid Data ({}% valid) "
+                         "(green=sleep; grey=non-wear)".format(self.subject_object.subjectID, self.percent_valid))
+
+        if self.subject_object.sleeplog_file is not None and self.subject_object.nonwear_file is None:
+            plt.suptitle("Participant {}: All Devices Valid Data ({}% valid) "
+                         "(green=sleep)".format(self.subject_object.subjectID, self.percent_valid))
 
         # Fills in region where participant was asleep
         if self.subject_object.sleeplog_file is not None:
-            ax1.set_title("Participant {}: Valid Data ({}% valid) (green = sleep)".format(self.subject_object.subjectID,
-                                                                                          self.percent_valid))
             for day1, day2 in zip(self.subject_object.sleep.data[:], self.subject_object.sleep.data[1:]):
                 try:
                     # Overnight sleep
@@ -406,28 +468,42 @@ class AllDevices:
                 except (AttributeError, TypeError):
                     pass
 
+        # Shades in non-wear regions
+        if self.subject_object.nonwear_file is not None:
+            ax1.fill_between(x=self.epoch_timestamps, y1=0, y2=[3*i for i in self.nonwear_validity],
+                             color='gray', alpha=0.5)
+
+            ax2.fill_between(x=self.epoch_timestamps, y1=0, y2=[3*i for i in self.nonwear_validity],
+                             color='gray', alpha=0.5)
+
+            ax3.fill_between(x=self.epoch_timestamps, y1=0, y2=[3 * i for i in self.nonwear_validity],
+                             color='gray', alpha=0.5)
+
+            ax4.fill_between(x=self.epoch_timestamps, y1=0, y2=[3 * i for i in self.nonwear_validity],
+                             color='gray', alpha=0.5)
+
         if self.ankle_intensity is not None:
-            ax1.plot(self.epoch_timestamps[:self.data_len], self.ankle[:self.data_len], color='#606060', label='Ankle')
-            ax1.set_ylim(-0.1, 3)
-            ax1.legend(loc='upper left')
+            ax1.plot(self.epoch_timestamps[:self.data_len], self.ankle[:self.data_len], color='black')
+            ax1.set_ylim(-0.1, 3.1)
+            ax1.set_yticks(np.arange(0, 4))
             ax1.set_ylabel("Intensity Cat.")
 
         if self.wrist_intensity is not None:
-            ax2.plot(self.epoch_timestamps[:self.data_len], self.wrist[:self.data_len], color='#606060', label='Wrist')
-            ax2.set_ylim(-0.1, 3)
-            ax2.legend(loc='upper left')
+            ax2.plot(self.epoch_timestamps[:self.data_len], self.wrist[:self.data_len], color='black')
+            ax2.set_ylim(-0.1, 3.1)
+            ax2.set_yticks(np.arange(0, 4))
             ax2.set_ylabel("Intensity Cat.")
 
         if self.hr_intensity is not None:
-            ax3.plot(self.epoch_timestamps[:self.data_len], self.hr[:self.data_len], color='red', label='HR')
-            ax3.set_ylim(-0.1, 3)
-            ax3.legend(loc='upper left')
+            ax3.plot(self.epoch_timestamps[:self.data_len], self.hr[:self.data_len], color='red')
+            ax3.set_ylim(-0.1, 3.1)
+            ax3.set_yticks(np.arange(0, 4))
             ax3.set_ylabel("Intensity Cat.")
 
         if self.hracc_intensity is not None:
-            ax4.plot(self.epoch_timestamps[:self.data_len], self.hr_acc[:self.data_len], color='black', label='HR-Acc')
-            ax4.set_ylim(-0.1, 3)
-            ax4.legend(loc='upper left')
+            ax4.plot(self.epoch_timestamps[:self.data_len], self.hr_acc[:self.data_len], color='black')
+            ax4.set_ylim(-0.1, 3.1)
+            ax4.set_yticks(np.arange(0, 4))
             ax4.set_ylabel("Intensity Cat.")
 
         ax4.xaxis.set_major_formatter(xfmt)
@@ -854,7 +930,6 @@ class AccelOnly:
 
         print()
         print("====================================== REMOVING INVALID DATA ========================================")
-        print("\n" + "Using only sleep to find valid epochs in accelerometer data...")
 
         self.subject_object = subject_object
         self.write_results = write_results
@@ -867,9 +942,11 @@ class AccelOnly:
         self.ankle_intensity = None
         self.ankle_intensity_group = None
         self.wrist_intensity = None
+        self.ankle_svm = None
 
         # Data used to determine what epochs are valid
         self.sleep_validity = None
+        self.nonwear_validity = None
 
         # Data that only contains valid epochs
         self.ankle = None
@@ -888,6 +965,8 @@ class AccelOnly:
         self.final_epoch_validity = None
         self.validity_dict = None
 
+        self.avg_ankle_counts = 0
+
         # =============================================== RUNS METHODS ================================================
 
         # Organizing data depending on what data are available
@@ -895,11 +974,16 @@ class AccelOnly:
 
         # Data used to determine which epochs are valid ---------------------------------------------------------------
         # Removal based on sleep data
-        self.remove_invalid_sleep()
+        self.remove_invalid_sleep_and_nonwear()
+
+        # Removal based on wear status
+        # self.remove_nonwear()
 
         self.recalculate_activity_totals()
 
         self.generate_validity_report()
+
+        self.calculate_average_valid_ankle_counts()
 
         if self.write_results:
             self.write_activity_totals()
@@ -933,6 +1017,9 @@ class AccelOnly:
                 self.ankle_intensity = self.subject_object.ankle.model.epoch_intensity if \
                     self.subject_object.ankle.model.epoch_intensity is not None else None
 
+                self.ankle_svm = self.subject_object.ankle.epoch.svm \
+                    if self.subject_object.ankle.epoch.svm is not None else None
+
                 self.ankle_intensity_group = self.subject_object.ankle.model.epoch_intensity_group if \
                     self.subject_object.ankle.model.epoch_intensity_group is not None else None
 
@@ -951,36 +1038,45 @@ class AccelOnly:
             self.sleep_validity = self.subject_object.sleep.status if \
                 self.subject_object.sleep.status is not None else None
 
-    def remove_invalid_sleep(self):
-        """Removes invalid epochs from Ankle, Wrist, and HR data based on sleep validity.
-           If invalid data has been removed using HR data, this method further removes invalid periods due to sleep.
-           If invalid data has not been removed using HR data, this method removes invalid periods due to sleep from
-           the "raw" data.
-        """
+        if self.subject_object.nonwear_file is not None:
+            self.nonwear_validity = self.subject_object.nonwear.status if \
+                self.subject_object.nonwear.status is not None else None
 
-        if self.subject_object.sleeplog_file is not None:
+    def remove_invalid_sleep_and_nonwear(self):
+        """Removes invalid epochs from Ankle and Wrist data based on sleep validity."""
+
+        if self.subject_object.sleeplog_file is not None and self.subject_object.nonwear_file is None:
             print("\n" + "Removing epochs during sleep...")
+        if self.subject_object.sleeplog_file is None and self.subject_object.nonwear_file is not None:
+            print("\n" + "Removing epochs during non-wear...")
+        if self.subject_object.sleeplog_file is not None and self.subject_object.nonwear_file is not None:
+            print("\n" + "Removing epochs during sleep and during non-wear...")
+        if self.subject_object.sleeplog_file is  None and self.subject_object.nonwear_file is None:
+            print("\nNo sleep or non-wear data to use...")
 
-            # Ankle --------------------------------------------------------------------------------------------------
-            if self.ankle_intensity is not None and self.ankle is None:
-                self.ankle = [self.ankle_intensity[i] if self.sleep_validity[i] == 0 else None
-                              for i in range(self.data_len)]
-                self.ankle_group = [self.ankle_intensity_group[i] if self.sleep_validity[i] == 0 else None
-                                    for i in range(self.data_len)]
-
-            # Wrist --------------------------------------------------------------------------------------------------
-            if self.wrist_intensity is not None and self.wrist is None:
-                self.wrist = [self.wrist_intensity[i] if self.sleep_validity[i] == 0 else None
-                              for i in range(self.data_len)]
-
-            print("Complete.")
-
+        if self.subject_object.nonwear_file is None:
+            self.nonwear_validity = np.zeros(len(self.epoch_timestamps))
         if self.subject_object.sleeplog_file is None:
-            print("No sleep data. Cannot remove sleep periods.")
+            self.sleep_validity = np.zeros(len(self.epoch_timestamps))
 
-            self.ankle = self.ankle_intensity
-            self.ankle_group = self.ankle_intensity_group
-            self.wrist = self.wrist_intensity
+        # Ankle --------------------------------------------------------------------------------------------------
+        if self.ankle_intensity is not None and self.ankle is None:
+            self.ankle = [self.ankle_intensity[i] if
+                          self.sleep_validity[i] == 0 and self.nonwear_validity[i] == 0 else None
+                          for i in range(self.data_len)]
+            self.ankle_group = [self.ankle_intensity_group[i] if
+                                self.sleep_validity[i] == 0 and self.nonwear_validity[i] == 0 else None
+                                for i in range(self.data_len)]
+            self.ankle_svm = [self.ankle_svm[i] if self.sleep_validity[i] == 0 and self.nonwear_validity[i] == 0
+                              else None for i in range(self.data_len)]
+
+        # Wrist --------------------------------------------------------------------------------------------------
+        if self.wrist_intensity is not None and self.wrist is None:
+            self.wrist = [self.wrist_intensity[i] if
+                          self.sleep_validity[i] == 0 and self.nonwear_validity[i] == 0 else None
+                          for i in range(self.data_len)]
+
+        print("Complete.")
 
     def generate_validity_report(self):
 
@@ -1018,14 +1114,24 @@ class AccelOnly:
 
         fig, (ax1, ax2) = plt.subplots(2, sharex='col', figsize=(10, 7))
 
-        if self.subject_object.sleeplog_file is None:
-            ax1.set_title("Participant {}: Accel-Only Valid Data ({}% valid) "
-                          "(no sleep data)".format(self.subject_object.subjectID, self.percent_valid))
+        if self.subject_object.sleeplog_file is None and self.subject_object.nonwear_file is None:
+            plt.suptitle("Participant {}: Accel-Only Valid Data ({}% valid) "
+                         "(no sleep or non-wear data)".format(self.subject_object.subjectID, self.percent_valid))
+
+        if self.subject_object.sleeplog_file is None and self.subject_object.nonwear_file is not None:
+            plt.suptitle("Participant {}: Accel-Only Valid Data ({}% valid) "
+                         "(grey=non-wear)".format(self.subject_object.subjectID, self.percent_valid))
+
+        if self.subject_object.sleeplog_file is not None and self.subject_object.nonwear_file is not None:
+            plt.suptitle("Participant {}: Accel-Only Valid Data ({}% valid) "
+                         "(green=sleep; grey=non-wear)".format(self.subject_object.subjectID, self.percent_valid))
+
+        if self.subject_object.sleeplog_file is not None and self.subject_object.nonwear_file is None:
+            plt.suptitle("Participant {}: Accel-Only Valid Data ({}% valid) "
+                         "(green=sleep)".format(self.subject_object.subjectID, self.percent_valid))
 
         # Fills in region where participant was asleep
         if self.subject_object.sleeplog_file is not None:
-            ax1.set_title("Participant {}: Accel-Only Valid Data ({}% valid) "
-                          "(green = sleep)".format(self.subject_object.subjectID, self.percent_valid))
 
             for day1, day2 in zip(self.subject_object.sleep.data[:], self.subject_object.sleep.data[1:]):
                 try:
@@ -1040,16 +1146,24 @@ class AccelOnly:
                 except (AttributeError, TypeError):
                     pass
 
+        # Shades in non-wear regions
+        if self.subject_object.nonwear_file is not None:
+            ax1.fill_between(x=self.epoch_timestamps, y1=0, y2=[3*i for i in self.nonwear_validity],
+                             color='gray', alpha=0.5)
+
+            ax2.fill_between(x=self.epoch_timestamps, y1=0, y2=[3*i for i in self.nonwear_validity],
+                             color='gray', alpha=0.5)
+
         if self.ankle_intensity is not None:
-            ax1.plot(self.epoch_timestamps[:self.data_len], self.ankle[:self.data_len], color='#606060', label='Ankle')
+            ax1.set_title("Ankle Data")
+            ax1.plot(self.epoch_timestamps[:self.data_len], self.ankle[:self.data_len], color='black')
             ax1.set_ylim(-0.1, 3)
-            ax1.legend(loc='upper left')
             ax1.set_ylabel("Intensity Cat.")
 
         if self.wrist_intensity is not None:
-            ax2.plot(self.epoch_timestamps[:self.data_len], self.wrist[:self.data_len], color='#606060', label='Wrist')
+            ax2.set_title("Wrist Data")
+            ax2.plot(self.epoch_timestamps[:self.data_len], self.wrist[:self.data_len], color='black')
             ax2.set_ylim(-0.1, 3)
-            ax2.legend(loc='upper left')
             ax2.set_ylabel("Intensity Cat.")
 
         ax2.xaxis.set_major_formatter(xfmt)
@@ -1065,6 +1179,12 @@ class AccelOnly:
                           "Light": 0, "Light%": 0,
                           "Moderate": 0, "Moderate%": 0,
                           "Vigorous": 0, "Vigorous%": 0}
+
+        self.hracc_totals = {"Model": "HR-Acc",
+                             "Sedentary": 0, "Sedentary%": 0,
+                             "Light": 0, "Light%": 0,
+                             "Moderate": 0, "Moderate%": 0,
+                             "Vigorous": 0, "Vigorous%": 0}
 
         # ANKLE -------------------------------------------------------------------------------------------------------
         if self.ankle is not None:
@@ -1112,6 +1232,10 @@ class AccelOnly:
                                  "Moderate%": round(self.wrist.count(2) / n_valid_epochs, 3),
                                  "Vigorous": self.wrist.count(3) / epoch_to_minutes,
                                  "Vigorous%": round(self.wrist.count(3) / n_valid_epochs, 3)}
+
+    def calculate_average_valid_ankle_counts(self):
+
+        self.avg_ankle_counts = np.mean([i for i in self.ankle_svm if i is not None])
 
     def write_activity_totals(self):
 
