@@ -9,6 +9,7 @@ import ImportCropIndexes
 import ImportEDF
 import HRAcc
 import DailyReports
+import Nonwear
 
 import os
 import numpy as np
@@ -41,7 +42,7 @@ class Subject:
                  rest_hr_window=60, n_epochs_rest_hr=10, hracc_threshold=30,
                  crop_index_file=None, filter_ecg=False,
                  output_dir=desktop_path, processed_folder=None,
-                 write_results=False, treadmill_log_file=None,
+                 write_results=False, treadmill_log_file=None, nonwear_log_file=None, run_zhou=False,
                  demographics_file=None, sleeplog_file=None):
 
         print()
@@ -79,6 +80,8 @@ class Subject:
         self.demographics_file = demographics_file
         self.treadmill_log_file = treadmill_log_file
         self.sleeplog_file = sleeplog_file
+        self.nonwear_file = nonwear_log_file
+        self.run_zhou = run_zhou
 
         # Data cropping
         self.starttime_dict = {"Ankle": None, "Wrist": None, "ECG": None}
@@ -101,7 +104,7 @@ class Subject:
         self.load_raw_ecg = load_raw_ecg
         self.filter_ecg = filter_ecg
 
-        if not self.load_ecg and self.load_ankle and self.load_wrist:
+        if not self.load_ecg and (self.load_ankle or self.load_wrist):
             self.accel_only = True
         if self.load_ecg:
             self.accel_only = False
@@ -124,6 +127,14 @@ class Subject:
         self.create_objects()
 
         self.sleep = SleepData.Sleep(subject_object=self)
+
+        self.nonwear = Nonwear.NonwearLog(subject_object=self)  # Manually-logged
+
+        if self.run_zhou and self.wrist_temp_filepath is not None and self.wrist_filepath is not None:
+            self.nonwear_zhou = Nonwear.ZhouNonwear(subject_object=self)
+        if not self.run_zhou or self.wrist_filepath is None or self.wrist_temp_filepath is None:
+            print("\nZhou non-wear algorithm is not being run.")
+            self.nonwear_zhou = None
 
         self.update_ecg_with_sleep_data()
 
@@ -336,7 +347,7 @@ class Subject:
         """Plots epoched accelerometer data with shaded regions marking sleep log data.
            Plots ankle/wrist/HR data if available"""
 
-        xfmt = mdates.DateFormatter("%a, %I:%M %p")
+        xfmt = mdates.DateFormatter("%a %b %d, %H:%M")
         locator = mdates.HourLocator(byhour=[0, 12], interval=1)
 
         fig, (ax1, ax2, ax3) = plt.subplots(3, sharex='col', figsize=(12, 7))
@@ -469,7 +480,7 @@ class Subject:
 
         ax3.xaxis.set_major_formatter(xfmt)
         ax3.xaxis.set_major_locator(locator)
-        plt.xticks(rotation=45, fontsize=8)
+        plt.xticks(rotation=45, fontsize=6)
 
     def plot_epoched(self):
         """Plots epoched wrist, ankle, and HR data on 3 subplots. Data is not removed for invalid periods; all
@@ -479,7 +490,6 @@ class Subject:
         ax1.set_title("Multi-Device Data: {}".format(self.subjectID))
 
         # Timestamp x-axis formatting
-        # xfmt = mdates.DateFormatter("%a, %I:%M %p")
         xfmt = mdates.DateFormatter("%a %b %d, %H:%M")
         locator = mdates.HourLocator(byhour=[0, 8, 16], interval=1)
 
@@ -487,7 +497,6 @@ class Subject:
         try:
             ax1.plot(self.wrist.epoch.timestamps[0:len(self.wrist.epoch.svm)],
                      self.wrist.epoch.svm[0:len(self.wrist.epoch.timestamps)], color='#606060', label="Wrist Acc.")
-            ax1.axhline(y=0, color='red', linewidth=1, linestyle='dashed')
             ax1.legend(loc='upper left')
             ax1.set_ylabel("Counts")
         except AttributeError:
@@ -497,7 +506,6 @@ class Subject:
         try:
             ax2.plot(self.ankle.epoch.timestamps[0:len(self.ankle.epoch.svm)],
                      self.ankle.epoch.svm[0:len(self.ankle.epoch.svm)], color='#606060', label="Ankle Acc.")
-            ax2.axhline(y=0, color='red', linewidth=1, linestyle='dashed')
             ax2.legend(loc='upper left')
             ax2.set_ylabel("Counts")
         except AttributeError:
@@ -522,6 +530,62 @@ class Subject:
         # Timestamp x-axis formatting
         ax3.xaxis.set_major_formatter(xfmt)
         ax3.xaxis.set_major_locator(locator)
+        plt.xticks(rotation=45, fontsize=6)
+
+    def plot_wrist_sleep_nonwear(self):
+
+        xfmt = mdates.DateFormatter("%a %b %d, %H:%M")
+        locator = mdates.HourLocator(byhour=[0, 12], interval=1)
+
+        fig, (ax1, ax2) = plt.subplots(2, sharex='col', figsize=(10, 7))
+
+        plt.suptitle("Subject {}: Wrist - Sleep and Nonwear Data".format(self.subjectID))
+
+        # WRIST ACCELEROMETER ----------------------------------------------------------------------------------------
+        try:
+            ax1.plot(self.wrist.epoch.timestamps[:len(self.wrist.epoch.svm)],
+                     self.wrist.epoch.svm[:len(self.wrist.epoch.timestamps)],
+                     label='Wrist', color='black')
+            ax1.legend(loc='upper left')
+            ax1.set_ylabel("Counts")
+
+            ax2.plot(self.sleep.epoch_timestamps,
+                     ["Awake" if i == 0 else "Asleep" for i in self.sleep.status[:len(self.sleep.epoch_timestamps)]],
+                     color='green', label="Sleep")
+
+            # Fills in region where participant was asleep
+            for day1, day2 in zip(self.sleep.data[:], self.sleep.data[1:]):
+                if day1[3] != "N/A" and day2[0] != "N/A":
+                    # Overnight --> green
+                    ax2.fill_between(x=[day1[3], day2[0]], y1="Awake", y2="Asleep", color='green', alpha=0.35)
+
+                if day1[2] != "N/A" and day1[1] != "N/A":
+                    # Naps --> red
+                    ax2.fill_between(x=[day1[2], day1[1]], y1="Awake", y2="Asleep", color='red', alpha=0.35)
+
+        except (AttributeError, TypeError):
+            pass
+
+        if self.run_zhou and self.wrist_filepath is not None and self.wrist_temp_filepath is not None:
+
+            ax2.plot(self.nonwear_zhou.epoch_timestamps[:len(self.nonwear_zhou.status)],
+                     ["Wear " if i == 0 else "Non-Wear " for i in self.nonwear_zhou.status],
+                     color='turquoise', label="Zhou Algorithm")
+            ax2.fill_between(x=self.nonwear_zhou.epoch_timestamps[:len(self.nonwear_zhou.status)],
+                             y1="Wear ", y2=["Wear " if i == 0 else "Non-Wear " for i in self.nonwear_zhou.status],
+                             color='turquoise', alpha=0.25)
+
+        if self.nonwear_file is not None:
+            ax2.plot(self.nonwear.epoch_timestamps, ["Wear" if i == 0 else "Non-Wear" for i in self.nonwear.status],
+                     color='gray', label="Nonwear Log")
+            ax2.fill_between(x=self.nonwear.epoch_timestamps, y1="Wear",
+                             y2=["Wear" if i == 0 else "Non-Wear" for i in self.nonwear.status],
+                             color='gray', alpha=0.5)
+
+            ax2.legend()
+
+        ax2.xaxis.set_major_formatter(xfmt)
+        ax2.xaxis.set_major_locator(locator)
         plt.xticks(rotation=45, fontsize=6)
 
     def plot_total_activity(self, validity_object):
@@ -697,3 +761,42 @@ class Subject:
                 ax3.set_ylabel("HR (bpm)")
 
             plt.show()
+
+    def plot_nonwear(self):
+
+        fig, (ax1, ax2, ax3) = plt.subplots(3, sharex='col', figsize=(10, 7))
+        plt.suptitle("Subject {}: Wrist Non-Wear Data".format(self.subjectID))
+
+        xfmt = mdates.DateFormatter("%a %b %d, %H:%M")
+        locator = mdates.HourLocator(byhour=[0, 8, 16], interval=1)
+
+        if self.load_wrist:
+            ax1.plot(self.wrist.epoch.timestamps, self.wrist.epoch.svm, color='black', label='Wrist')
+            ax1.set_ylabel("SVM")
+            ax1.legend()
+
+        if self.run_zhou and self.wrist_filepath is not None and self.wrist_temp_filepath is not None:
+            ax2.plot(self.nonwear_zhou.epoch_timestamps, self.nonwear_zhou.temperature_values,
+                     color='red', label='Temperature')
+            ax2.set_ylabel("ºC")
+            ax2.legend()
+
+            ax3.plot(self.nonwear_zhou.epoch_timestamps[:len(self.nonwear_zhou.status)],
+                     ["Wear " if i == 0 else "Non-Wear " for i in self.nonwear_zhou.status],
+                     color='turquoise', label="Zhou Algorithm")
+            ax3.fill_between(x=self.nonwear_zhou.epoch_timestamps[:len(self.nonwear_zhou.status)],
+                             y1="Wear ", y2=["Wear " if i == 0 else "Non-Wear " for i in self.nonwear_zhou.status],
+                             color='turquoise', alpha=0.25)
+
+        if self.nonwear_file is not None:
+            ax3.plot(self.nonwear.epoch_timestamps, ["Wear" if i == 0 else "Non-Wear" for i in self.nonwear.status],
+                     color='gray', label="Nonwear Log")
+            ax3.fill_between(x=self.nonwear.epoch_timestamps, y1="Wear",
+                             y2=["Wear" if i == 0 else "Non-Wear" for i in self.nonwear.status],
+                             color='gray', alpha=0.5)
+
+            ax3.legend()
+
+        ax3.xaxis.set_major_formatter(xfmt)
+        ax3.xaxis.set_major_locator(locator)
+        plt.xticks(rotation=45, fontsize=6)
