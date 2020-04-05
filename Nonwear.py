@@ -118,6 +118,11 @@ class NonwearLog:
         self.status = []
         self.nonwear_log = None
 
+        self.nonwear_dict = {"Minutes": 0, "Average Duration (Mins)": 0, "Percent of Time": 0}
+        self.nonwear_minutes = 0
+        self.avg_nonwear_duration = 0
+        self.nonwear_percent = 0
+
         self.prep_data()
         self.import_nonwearlog()
         self.mark_nonwear_epochs()
@@ -154,8 +159,14 @@ class NonwearLog:
             nonwear_log["DEVICE ON"] = pd.to_datetime(nonwear_log["DEVICE ON"], format="%Y%b%d %H:%M")
 
             nonwear_log = nonwear_log.fillna(self.epoch_timestamps[-1])
+            nonwear_durs = nonwear_log["DEVICE ON"] - nonwear_log["DEVICE OFF"]
 
             self.nonwear_log = nonwear_log
+
+            self.nonwear_log["PERIOD DURATION"] = nonwear_durs
+
+            self.nonwear_dict["Average Duration (Mins)"] = round(self.nonwear_log.describe()
+                                                                 ["PERIOD DURATION"]['mean'].total_seconds() / 60, 1)
 
             print("\nNon-wear log data imported. Found {} removals.".format(self.nonwear_log.shape[0]))
 
@@ -172,19 +183,26 @@ class NonwearLog:
 
         print("\nMarking non-wear epochs...")
 
+        # Puts pd.df data into list --> mucho faster
+        off_stamps = [i for i in self.nonwear_log["DEVICE OFF"]]
+        on_stamps = [i for i in self.nonwear_log["DEVICE ON"]]
+
         # Creates list of 0s corresponding to each epoch
         epoch_list = np.zeros(self.data_len)
 
         for i, epoch_stamp in enumerate(self.epoch_timestamps):
-            for row_num in range(self.nonwear_log.shape[0]):
-                if self.nonwear_log.iloc[row_num]["DEVICE OFF"] <= \
-                        epoch_stamp <= \
-                        self.nonwear_log.iloc[row_num]["DEVICE ON"]:
+            for off, on in zip(off_stamps, on_stamps):
+                if off <= epoch_stamp <= on:
                     epoch_list[i] = 1
 
         self.status = epoch_list
 
-        print("Complete.")
+        self.nonwear_dict["Minutes"] = (np.count_nonzero(self.status)) / (60 / self.subject_object.epoch_len)
+        self.nonwear_dict["Percent"] = round(self.nonwear_dict["Minutes"] * (60 / self.subject_object.epoch_len) / \
+                                             len(self.status), 4)
+
+        print("Complete. Found {} hours, {} minutes of "
+              "non-wear time.".format(np.floor(self.nonwear_dict["Minutes"]/60), self.nonwear_dict["Minutes"] % 60))
 
 
 class ZhouNonwear:
