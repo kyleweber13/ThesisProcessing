@@ -72,8 +72,17 @@ class DailyReport:
     def create_index_list(self):
 
         # Creates a list of dates from start of first day to last day of collection
-        day_list = pd.date_range(start=self.timestamps[0].date(), end=self.timestamps[-1].date(),
-                                 periods=(self.timestamps[-1].date()-self.timestamps[0].date()).days+1)
+        try:
+            day_list = pd.date_range(start=self.timestamps[0].date(), end=self.timestamps[-1].date(),
+                                     periods=(self.timestamps[-1].date()-self.timestamps[0].date()).days+1)
+
+        # Handles stupid timestamp formatting when reading epoched data from raw as opposed to from processed
+        except AttributeError:
+            start_stamp = datetime.strptime(str(self.timestamps[0])[:-3], "%Y-%m-%dT%H:%M:%S.%f")
+            end_stamp = datetime.strptime(str(self.timestamps[-1])[:-3], "%Y-%m-%dT%H:%M:%S.%f")
+
+            day_list = pd.date_range(start=start_stamp.date(), end=end_stamp.date(),
+                                     periods=(end_stamp.date()-start_stamp.date()).days+1)
 
         # Gets indexes that correspond to start of days
         for day in day_list:
@@ -155,6 +164,7 @@ class DailyReport:
             max_hr_list.append(round(max(self.roll_avg_hr[start:end]), 1))
             max_hr_time_list.append(
                 self.timestamps[self.roll_avg_hr[start:end].index(max(self.roll_avg_hr[start:end])) + start])
+
             mean_hr_list.append(round(sum(non_zero_hr) / len(non_zero_hr), 1))
             rest_hr_list.append(round(sum(sorted(awake_hr)[:self.n_resting_hrs]) / self.n_resting_hrs, 1))
 
@@ -429,7 +439,6 @@ class DailyReport:
             plt.ylabel("% of waking hours")
 
     def plot_week_activity_only(self, day_definition="sleep"):
-        plt.close('all')
 
         # Which data to use
         if day_definition == "Sleep" or day_definition == "sleep":
@@ -505,7 +514,7 @@ class DailyReport:
         plt.rcParams.update({'font.size': 12})
 
         plt.subplots_adjust(bottom=0.16, wspace=0.29)
-        plt.suptitle("Subject {}: Weekly Report".format(self.subjectID))
+        plt.suptitle("Sleep and Physical Activity Report")
 
         # SLEEP DATA -------------------------------------------------------------------------------------------------
         plt.subplot(1, 2, 1)
