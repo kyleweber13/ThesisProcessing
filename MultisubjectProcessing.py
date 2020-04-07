@@ -3,6 +3,7 @@ from Subject import Subject
 import pandas as pd
 from statsmodels.stats.anova import AnovaRM
 from statsmodels.stats.multicomp import (pairwise_tukeyhsd, MultiComparison)
+import statsmodels.stats.power as smp
 from matplotlib import pyplot as plt
 import numpy as np
 import scipy
@@ -332,32 +333,51 @@ class AverageAnkleCountsStratify:
 
     def __init__(self, subj_list=None, check_file=None, n_groups=4):
         """Calculates average ankle counts during waking/worn hours and during waking/worn/valid ECG hours.
+           Performs power analysis to determine attained statistical power in separating groups by ankle counts.
+
            Purpose: to determine if these two ways of calculating average counts are the same. Affects how
            participants are stratified into relative activity level groups.
+
+           :argument
+           -subj_list: List of IDs to loop through if no check_file is given
+           -check_file: pathway to spreadsheet containing ID, ankle counts and wrist count data
+           -n_groups: number of groups to generate. The top and bottom n_total/n_group participants are split into
+                      low-active and high-active groups
         """
 
         self.check_file = check_file
         self.avg_counts_accels = []
         self.avg_counts_validecg = []
         self.ids = []
+        self.high_active_ids = None
+        self.low_active_ids = None
         self.subj_list = subj_list
         self.n_groups = n_groups
         self.n_per_group = 1
 
-        self.df = None
-        self.q1_subjs = None
-        self.q4_subjs = None
+        self.df = None  # Whole dataset
+        self.low_active = None  # low activity group
+        self.high_active = None  # high activity group
 
+        # Stats data
+        self.t_crit = 0
         self.r = None
         self.ttest_counts = None
         self.ttest_age = None
         self.ttest_height = None
         self.ttest_weight = None
+        self.ttest_bmi = None
         self.wilcoxon_counts = None
         self.wilcoxon_age = None
         self.wilcoxon_weight = None
         self.wilcoxon_height = None
         self.wilcoxon_sex = None
+
+        # Power analysis data
+        self.cohens_d = 0
+        self.power_object = None
+        self.n_required = 0
+        self.achieved_power = 0
 
         if os.path.exists(self.check_file):
             self.import_data()
@@ -366,6 +386,7 @@ class AverageAnkleCountsStratify:
             self.loop_participants(subj_list=subj_list)
 
         self.create_groups(n_groups=self.n_groups)
+        self.create_group_lists()
         self.calculate_stats()
 
     def import_data(self):
@@ -374,6 +395,7 @@ class AverageAnkleCountsStratify:
         self.df = pd.read_excel(io=self.check_file,
                                 columns=["Ankle Valid Counts", "Wrist Valid Counts", "Age", "Sex", "Weight", "Height"])
 
+        self.df["BMI"] = self.df["Weight"] / ((self.df["Height"] / 100) ** 2)
         self.df.dropna(inplace=True)
 
         self.df = self.df.loc[self.df["ID"].isin(self.subj_list)]
@@ -452,8 +474,8 @@ class AverageAnkleCountsStratify:
 
         sorted_by_anklecounts = self.df.sort_values(["Ankle Valid Counts"])
 
-        self.q1_subjs = sorted_by_anklecounts.iloc[0:self.n_per_group]
-        self.q4_subjs = sorted_by_anklecounts.iloc[-self.n_per_group:]
+        self.low_active = sorted_by_anklecounts.iloc[0:self.n_per_group]
+        self.high_active = sorted_by_anklecounts.iloc[-self.n_per_group:]
 
         self.df = self.df.sort_values(["Ankle Valid Counts"])
         self.df["Group"] = ["Low" for i in range(self.n_per_group)] + ["High" for i in range(self.n_per_group)]
@@ -463,66 +485,113 @@ class AverageAnkleCountsStratify:
 
         # COUNTS COMPARISON ------------------------------------------------------------------------------------------
         self.r = scipy.stats.pearsonr(self.df["Ankle Valid Counts"], self.df["Wrist Valid Counts"])
-        print("Correlation (ankle ~ wrist counts): r = {}, p = {}".format(round(self.r[0], 3), round(self.r[1], 3)))
+        print("\nCorrelation (ankle ~ wrist counts): r = {}, p = {}".format(round(self.r[0], 3), round(self.r[1], 3)))
 
         # BETWEEN-GROUP COMPARISONS ----------------------------------------------------------------------------------
         print("\n------------------------ Comparison between {} groups created using ankle counts"
               "------------------------ ".format(self.n_groups))
 
+        self.t_crit = scipy.stats.t.ppf(0.05, df=self.n_per_group*2-2)
+
         # Ankle counts
-        self.ttest_counts = scipy.stats.ttest_ind(self.q1_subjs["Ankle Valid Counts"],
-                                                  self.q4_subjs["Ankle Valid Counts"])
+        self.ttest_counts = scipy.stats.ttest_ind(self.low_active["Ankle Valid Counts"],
+                                                  self.high_active["Ankle Valid Counts"])
         print("Independent T-tests:")
         print("-Counts: t = {}, p = {}".format(round(self.ttest_counts[0], 3), round(self.ttest_counts[1], 3)))
 
         # Consider one-sided
-        self.wilcoxon_counts = scipy.stats.wilcoxon(self.q1_subjs["Ankle Valid Counts"],
-                                                    self.q4_subjs["Ankle Valid Counts"])
+        self.wilcoxon_counts = scipy.stats.wilcoxon(self.low_active["Ankle Valid Counts"],
+                                                    self.high_active["Ankle Valid Counts"])
 
         # Age
-        self.ttest_age = scipy.stats.ttest_ind(self.q1_subjs["Age"], self.q4_subjs["Age"])
+        self.ttest_age = scipy.stats.ttest_ind(self.low_active["Age"], self.high_active["Age"])
         print("-Age:    t = {}, p = {}".format(round(self.ttest_age[0], 3), round(self.ttest_age[1], 3)))
 
         # Weight
-        self.ttest_weight = scipy.stats.ttest_ind(self.q1_subjs["Weight"], self.q4_subjs["Weight"])
+        self.ttest_weight = scipy.stats.ttest_ind(self.low_active["Weight"], self.high_active["Weight"])
         print("-Weight: t = {}, p = {}".format(round(self.ttest_weight[0], 3), round(self.ttest_weight[1], 3)))
 
         # Height
-        self.ttest_height = scipy.stats.ttest_ind(self.q1_subjs["Height"], self.q4_subjs["Height"])
+        self.ttest_height = scipy.stats.ttest_ind(self.low_active["Height"], self.high_active["Height"])
         print("-Height: t = {}, p = {}".format(round(self.ttest_height[0], 3), round(self.ttest_weight[1], 3)))
 
+        self.ttest_bmi = scipy.stats.ttest_ind(self.low_active["BMI"], self.high_active["BMI"])
+        print("-BMI: t = {}, p = {}".format(round(self.ttest_bmi[0], 3), round(self.ttest_bmi[1], 3)))
+
         # Sex
-        group1_n_females = [i for i in self.q1_subjs["Sex"].values].count(1)
-        group2_n_females = [i for i in self.q4_subjs["Sex"].values].count(1)
+        group1_n_females = [i for i in self.low_active["Sex"].values].count(1)
+        group2_n_females = [i for i in self.high_active["Sex"].values].count(1)
 
         print("\n-Females per group:")
         print("     -Low activity: {}".format(group1_n_females))
         print("     -High activity: {}".format(group2_n_females))
+
+        # Effect size and statistical power ---------------------------------------------------------------------------
+        sd1 = self.low_active.describe().values[2][0]
+        mean1 = self.low_active.describe().values[1][0]
+        sd2 = self.high_active.describe().values[2][0]
+        mean2 = self.high_active.describe().values[1][0]
+
+        pooled_sd = ((sd1 ** 2 + sd2 ** 2) / 2) ** (1 / 2)
+
+        self.cohens_d = round((mean2 - mean1) / pooled_sd, 3)
+
+        print("\nPOWER ANALYSIS")
+        print("\n-Effect size between average ankle counts: d = {}".format(self.cohens_d))
+
+        # Statistical power -------------------------------------------------------------------------------------------
+        self.power_object = smp.TTestIndPower()
+        self.n_required = self.power_object.solve_power(abs(self.cohens_d), power=0.8, alpha=0.05)
+        self.achieved_power = smp.TTestIndPower().solve_power(self.cohens_d, nobs1=5, ratio=1, alpha=.05)
+
+        print("-Sample size required to reach for β of 0.80 is {}.".format(round(self.n_required, 2)))
+        print("-Attained power = {}".format(round(self.achieved_power, 3)))
+
+        if self.achieved_power > 0.8:
+            print("     -Acceptable power attained.")
+
+    def plot_power(self):
+        self.power_object.plot_power(dep_var="nobs", nobs=np.array(range(2, 20)), effect_size=np.array([self.cohens_d]))
+        plt.scatter(self.n_per_group, self.achieved_power, c='black',
+                    label="Power achieved ({})".format(round(self.achieved_power, 3)))
+        plt.fill_between(x=np.array(range(3, 20)), y1=0.8, y2=0, color='red', alpha=0.25)
+        plt.fill_between(x=np.array(range(3, 20)), y1=0.8, y2=1, color='green', alpha=0.25)
+
+        plt.xlabel("N participants")
+        plt.xticks(np.arange(2, 20, 2))
+        plt.ylabel("Power")
+        plt.legend()
+        plt.title("Power Calculation")
 
     def show_boxplots(self):
 
         plt.subplots(2, 2, figsize=(10, 7))
 
         plt.subplot(2, 2, 1)
-        plt.boxplot(x=[self.q1_subjs["Ankle Valid Counts"], self.q4_subjs["Ankle Valid Counts"]],
+        plt.boxplot(x=[self.low_active["Ankle Valid Counts"], self.high_active["Ankle Valid Counts"]],
                     labels=["Low activity", "High activity"])
         plt.ylabel("Average Ankle Counts")
         plt.title("Ankle Counts")
 
         plt.subplot(2, 2, 2)
-        plt.boxplot(x=[self.q1_subjs["Age"], self.q4_subjs["Age"]], labels=["Low activity", "High activity"])
+        plt.boxplot(x=[self.low_active["Age"], self.high_active["Age"]], labels=["Low activity", "High activity"])
         plt.ylabel("Age (years)")
         plt.title("Age")
 
         plt.subplot(2, 2, 3)
-        plt.boxplot(x=[self.q1_subjs["Height"], self.q4_subjs["Height"]], labels=["Low activity", "High activity"])
+        plt.boxplot(x=[self.low_active["Height"], self.high_active["Height"]], labels=["Low activity", "High activity"])
         plt.ylabel("Height (cm)")
         plt.title("Height")
 
         plt.subplot(2, 2, 4)
-        plt.boxplot(x=[self.q1_subjs["Weight"], self.q4_subjs["Weight"]], labels=["Low activity", "High activity"])
+        plt.boxplot(x=[self.low_active["Weight"], self.high_active["Weight"]], labels=["Low activity", "High activity"])
         plt.ylabel("Weight (kg)")
         plt.title("Weight")
+
+    def create_group_lists(self):
+
+        self.high_active_ids = self.df.loc[self.df["Group"] == "High"]["ID"].values
+        self.low_active_ids = self.df.loc[self.df["Group"] == "Low"]["ID"].values
 
 
 z = AverageAnkleCountsStratify(subj_list=usable_subjs.participant_list,
