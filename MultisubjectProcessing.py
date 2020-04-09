@@ -8,6 +8,11 @@ from matplotlib import pyplot as plt
 import numpy as np
 import scipy
 import os
+import seaborn as sns
+import statsmodels.api as sm
+from statsmodels.formula.api import ols
+import statsmodels.stats.multicomp
+import pingouin as pg
 
 usable_subjs = LocateUsableParticipants.SubjectSubset(check_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/"
                                                                  "OND07_ProcessingStatus.xlsx",
@@ -319,16 +324,6 @@ class AnovaComparisonRegressionActivityMinutes:
         plt.title("Means ± SEM")
 
 
-class RelativeActivityEffect:
-
-    def __init(self):
-        """Statistical analysis between relatively active and inactive groups for between-model differences in
-           activity minutes.
-        """
-
-        pass
-
-
 class AverageAnkleCountsStratify:
 
     def __init__(self, subj_list=None, check_file=None, n_groups=4):
@@ -594,10 +589,9 @@ class AverageAnkleCountsStratify:
         self.low_active_ids = self.df.loc[self.df["Group"] == "Low"]["ID"].values
 
 
-z = AverageAnkleCountsStratify(subj_list=usable_subjs.participant_list,
+"""z = AverageAnkleCountsStratify(subj_list=usable_subjs.participant_list,
                                check_file="/Users/kyleweber/Desktop/Data/OND07/Processed Data/"
-                                          "ECGValidity_AccelCounts_All.xlsx",
-                               n_groups=2)
+                                          "ECGValidity_AccelCounts_All.xlsx", n_groups=2)"""
 
 
 class AverageAnkleCountsValidInvalid:
@@ -710,4 +704,61 @@ class AverageAnkleCountsValidInvalid:
         plt.legend()
 
 
-# y = AverageAnkleCountsValidInvalid(subj_list=np.arange(3002, 3045))
+class RelativeActivityEffect:
+
+    def __init__(self, data_file):
+        """Statistical analysis between relatively active and inactive groups for between-model differences in
+           activity minutes.
+        """
+
+        self.data_file = data_file
+
+        self.high_active_ids = [3024, 3029, 3031, 3032, 3043]
+        self.low_active_ids = [3026, 3030, 3034, 3037, 3039]
+
+        self.df = None
+
+        """RUNS METHODS"""
+        self.import_data()
+
+    def import_data(self):
+
+        self.df = pd.read_excel(self.data_file, index_col="ID")
+
+    def comparison_by_group_anova(self, dependent_var):
+        """Performs a Group x Comparison mixed ANOVA on the dependent variable that is passed in.
+           Performs pairwise T-test comparisons for post-hoc analysis.
+           Plots group means using Seaborn package.
+
+        :argument
+        -dependent_var: name of column in self.df to use as dependent variable
+
+        :returns
+        -data objects from pingouin ANOVA and posthoc objects
+        """
+
+        print("\nPerforming Group x Comparison mixed ANOVA for"
+              "dependent variable {}.".format(dependent_var.capitalize()))
+
+        aov = pg.mixed_anova(dv=dependent_var, within="COMPARISON", between="GROUP", subject="ID", data=self.df)
+        pg.print_table(aov.iloc[:, 0:8])
+        print()
+        pg.print_table(aov.iloc[:, 9:])
+
+        sns.pointplot(data=self.df, x='GROUP', y=dependent_var, hue='COMPARISON',
+                      dodge=False, markers='o', capsize=.1, errwidth=1, palette='Set1')
+        plt.title("Group x Comparison Mixed ANOVA: {}".format(dependent_var.capitalize()))
+
+        posthoc = pg.pairwise_ttests(dv=dependent_var, within="COMPARISON", between='GROUP',
+                                     subject='ID', data=self.df)
+        pg.print_table(posthoc)
+
+        return aov, posthoc
+
+
+
+"""
+x = RelativeActivityEffect('/Users/kyleweber/Desktop/Data/OND07/Processed Data/ActivityGroupData.xlsx')
+aov, posthoc = x.comparison_by_group_anova(dependent_var="SEDENTARY%")
+"""
+
