@@ -12,6 +12,7 @@ import seaborn as sns
 import researchpy as rp
 import statsmodels.api as sm
 import statsmodels.stats.multicomp
+from statsmodels.formula.api import ols
 import pingouin as pg
 
 usable_subjs = LocateUsableParticipants.SubjectSubset(check_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/"
@@ -877,11 +878,14 @@ class RelativeActivityEffect:
         self.data_file = data_file
         self.df_mins = None
         self.df_percent = None
+        self.shapiro_df = None
         self.aov = None
-        self.posthoc = None
+        self.posthoc_para = None
+        self.posthoc_nonpara = None
 
         """RUNS METHODS"""
         self.load_data()
+        self.check_normality()
 
     def load_data(self):
 
@@ -891,6 +895,37 @@ class RelativeActivityEffect:
         self.df_percent = df[["ID", 'Group', 'Model', 'Sedentary%', 'Light%', 'Moderate%', 'Vigorous%']]
 
         # self.df_mins_long = pd.melt(frame=self.df_mins, id_vars="ID", var_name="Group", value_name="Minutes")
+
+    def check_normality(self, show_plots=False):
+        """Runs Shapiro-Wilk test for each group x model combination and prints results.
+           Shows boxplots sorted by group and model"""
+
+        # Results df
+        shapiro_lists = []
+
+        # Data sorted by Group
+        by_group = self.df_percent.groupby("Group")
+
+        for group_name in ["HIGH", "LOW"]:
+            for intensity in ["Sedentary%", "Light%", "Moderate%", "Vigorous%"]:
+                result = scipy.stats.shapiro(by_group.get_group(group_name)[intensity])
+                shapiro_lists.append({"SortIV": group_name, "Intensity": intensity,
+                                      "W": result[0], "p": result[1], "Violation": result[1] <= .05})
+
+        # Data sorted by Model
+        by_model = self.df_percent.groupby("Model")
+        for model_name in ["Wrist", "Ankle", "HR", "HR-Acc"]:
+            for intensity in ["Sedentary%", "Light%", "Moderate%", "Vigorous%"]:
+                result = scipy.stats.shapiro(by_model.get_group(model_name)[intensity])
+                shapiro_lists.append({"SortIV": model_name, "Intensity": intensity,
+                                      "W": result[0], "p": result[1], "Violation": result[1] <= .05})
+
+        self.shapiro_df = pd.DataFrame(shapiro_lists, columns=["SortIV", "Intensity", "W", "p", "Violation"])
+        print(self.shapiro_df)
+
+        if show_plots:
+            by_group.boxplot(column=["Sedentary%", "Light%", "Moderate%", "Vigorous%"])
+            by_model.boxplot(column=["Sedentary%", "Light%", "Moderate%", "Vigorous%"])
 
     def perform_anova(self, activity_intensity="Moderate", data_type="percent"):
 
@@ -922,9 +957,9 @@ class RelativeActivityEffect:
         print("\nPerforming Group x Model mixed ANOVA on {} activity.".format(activity_intensity))
 
         # Group x Intensity mixed ANOVA
-        self.aov = pg.mixed_anova(dv=activity_intensity, within="Model", between="Group", subject="ID", data=df)
-        pg.print_table(self.aov.iloc[:, 0:8])
-        pg.print_table(self.aov.iloc[:, 9:])
+        self.aov = pg.mixed_anova(dv=activity_intensity, within="Model", between="Group", subject="ID", data=df,
+                                  correction=True)
+        pg.print_table(self.aov)
 
         group_p = self.aov.loc[self.aov["Source"] == "Group"]["p-unc"]
         group_sig = group_p.values[0] <= 0.05
@@ -935,7 +970,7 @@ class RelativeActivityEffect:
         interaction_p = self.aov.loc[self.aov["Source"] == "Interaction"]["p-unc"]
         interaction_sig = interaction_p.values[0] <= 0.05
 
-        print("\nANOVA quick summary:")
+        print("ANOVA quick summary:")
         if model_sig:
             print("-Main effect of Model (p = {})".format(round(model_p.values[0], 3)))
         if not model_sig:
@@ -949,10 +984,19 @@ class RelativeActivityEffect:
         if not interaction_sig:
             print("-No Group x Model interaction")
 
-        self.posthoc = pg.pairwise_ttests(dv=activity_intensity, within="Model",
-                                          between='Group', subject='ID', data=df)
+        posthoc_para = pg.pairwise_ttests(dv=activity_intensity, subject='ID',
+                                          within="Model", between='Group',
+                                          data=df,
+                                          padjust="bonf", effsize="cohen", parametric=True)
+        posthoc_nonpara = pg.pairwise_ttests(dv=activity_intensity, subject='ID',
+                                             within="Model", between='Group',
+                                             data=df,
+                                             padjust="bonf", effsize="cohen", parametric=False)
 
-        pg.print_table(self.posthoc)
+        self.posthoc_para = posthoc_para
+        self.posthoc_nonpara = posthoc_nonpara
+        pg.print_table(posthoc_para)
+        pg.print_table(posthoc_nonpara)
 
     def plot_main_effects(self, intensity):
 
@@ -990,4 +1034,5 @@ x = RelativeActivityEffect('/Users/kyleweber/Desktop/Data/OND07/Processed Data/'
                            'Activity Level Comparison/ActivityGroupsData_AllActivityMinutes.xlsx')
 x.perform_anova(activity_intensity="Vigorous", data_type="percent")
 
-x.plot_main_effects("Vigorous")
+x.posthoc_nonpara.to_excel("/Users/kyleweber/Desktop/Nonpara.xlsx")
+x.posthoc_para.to_excel("/Users/kyleweber/Desktop/Para.xlsx")
