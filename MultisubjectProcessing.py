@@ -17,12 +17,12 @@ import pingouin as pg
 
 usable_subjs = LocateUsableParticipants.SubjectSubset(check_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/"
                                                                  "OND07_ProcessingStatus.xlsx",
-                                                      wrist_ankle=False, wrist_hr=False,
+                                                      wrist_ankle=True, wrist_hr=False,
                                                       wrist_hracc=False, hr_hracc=False,
                                                       ankle_hr=False, ankle_hracc=False,
                                                       wrist_only=False, ankle_only=False,
                                                       hr_only=False, hracc_only=False,
-                                                      require_treadmill=True, require_all=True)
+                                                      require_treadmill=True, require_all=False)
 
 
 def loop_subjects_standalone(subj_list):
@@ -34,7 +34,7 @@ def loop_subjects_standalone(subj_list):
             x = Subject(
                 # What data to load in
                 subjectID=int(subj),
-                load_ecg=True, load_ankle=True, load_wrist=False,
+                load_ecg=True, load_ankle=True, load_wrist=True,
                 load_raw_ecg=False, load_raw_ankle=False, load_raw_wrist=False,
                 from_processed=True,
 
@@ -490,8 +490,8 @@ class AverageAnkleCountsStratify:
         self.t_crit = scipy.stats.t.ppf(0.05, df=self.n_per_group*2-2)
 
         # Ankle counts
-        self.ttest_counts = scipy.stats.ttest_ind(self.low_active["Ankle Valid Counts"],
-                                                  self.high_active["Ankle Valid Counts"])
+        self.ttest_counts = scipy.stats.ttest_ind(self.low_active["Wrist Valid Counts"],
+                                                  self.high_active["Wrist Valid Counts"])
         print("Independent T-tests:")
         print("-Counts: t = {}, p = {}".format(round(self.ttest_counts[0], 3), round(self.ttest_counts[1], 3)))
 
@@ -871,63 +871,163 @@ class RelativeActivityEffectDiff:
 # x.norm_df_intensity["GROUP"] = x.df["GROUP"].values
 
 
-class RelativeActivityEffect:
+class Objective2:
 
-    def __init__(self, data_file=None):
+    def __init__(self, data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Kappas_AllData.xlsx'):
+
+        os.chdir("/Users/kyleweber/Desktop/")
 
         self.data_file = data_file
-        self.df_mins = None
-        self.df_percent = None
-        self.shapiro_df = None
-        self.aov = None
-        self.posthoc_para = None
-        self.posthoc_nonpara = None
+        self.df = None
+        self.oneway_rm_aov = None
+        self.ttests_unpaired = None
+        self.ttests_paired = None
 
         """RUNS METHODS"""
         self.load_data()
-        self.check_normality()
+        self.pairwise_ttests_paired()
+        self.pairwise_ttests_unpaired()
+
+    def load_data(self):
+        self.df = pd.read_excel(self.data_file)
+
+    def check_normality(self):
+        for col_name in self.df.keys():
+            result = scipy.stats.shapiro(self.df[col_name].dropna())
+            print(col_name, ":", "W =", round(result[0], 3), "p =", round(result[1], 3))
+
+    def pairwise_ttests_unpaired(self):
+
+        df = self.df.melt(id_vars="ID")
+
+        self.ttests_unpaired = pg.pairwise_ttests(dv="value", subject='ID',
+                                                  between='variable', data=df,
+                                                  padjust="bonf", effsize="cohen", parametric=True)
+
+    def pairwise_ttests_paired(self):
+
+        df = self.df.melt(id_vars="ID")
+
+        self.oneway_rm_aov = pg.rm_anova(data=df, dv="value", within="variable", subject='ID')
+
+        self.ttests_paired = pg.pairwise_ttests(dv="value", subject='ID',
+                                                within='variable', data=df,
+                                                padjust="bonf", effsize="cohen", parametric=True)
+
+
+# a = Objective2(data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Kappas_AllData.xlsx')
+# b = Objective2(data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Kappas_RepeatedOnly.xlsx')
+
+
+class Objective3:
+
+    def __init__(self, activity_data_file=None, kappa_data_file=None):
+
+        self.activity_data_file = activity_data_file
+        self.kappa_data_file = kappa_data_file
+        self.df_mins = None
+        self.df_percent = None
+        self.df_kappa = None
+        self.df_kappa_long = None
+        self.shapiro_df = None
+        self.levene_df = None
+        self.aov = None
+        self.kappa_aov = None
+        self.posthoc_para = None
+        self.posthoc_nonpara = None
+        self.kappa_posthoc = None
+
+        """RUNS METHODS"""
+        self.load_data()
+        # self.check_assumptions()
+        self.perform_kappa_anova()
 
     def load_data(self):
 
-        df = pd.read_excel(self.data_file)
+        # Activity Minutes/Percent
+        df = pd.read_excel(self.activity_data_file)
 
         self.df_mins = df[["ID", 'Group', 'Model', 'Sedentary', 'Light', 'Moderate', 'Vigorous']]
         self.df_percent = df[["ID", 'Group', 'Model', 'Sedentary%', 'Light%', 'Moderate%', 'Vigorous%']]
 
-        # self.df_mins_long = pd.melt(frame=self.df_mins, id_vars="ID", var_name="Group", value_name="Minutes")
+        self.df_percent["MVPA%"] = self.df_percent["Moderate%"] + self.df_percent["Vigorous%"]
 
-    def check_normality(self, show_plots=False):
-        """Runs Shapiro-Wilk test for each group x model combination and prints results.
+        # Cohen's Kappa data
+        self.df_kappa = pd.read_excel(self.kappa_data_file)
+
+    def check_assumptions(self, show_plots=False):
+        """Runs Shapiro-Wilk and Levene's test for each group x model combination and prints results.
            Shows boxplots sorted by group and model"""
+
+        print("\n============================== Checking ANOVA assumptions ==============================")
 
         # Results df
         shapiro_lists = []
+
+        levene_lists = []
 
         # Data sorted by Group
         by_group = self.df_percent.groupby("Group")
 
         for group_name in ["HIGH", "LOW"]:
-            for intensity in ["Sedentary%", "Light%", "Moderate%", "Vigorous%"]:
-                result = scipy.stats.shapiro(by_group.get_group(group_name)[intensity])
+            for intensity in ["Sedentary%", "Light%", "Moderate%", "Vigorous%", "MVPA%"]:
+                shapiro = scipy.stats.shapiro(by_group.get_group(group_name)[intensity])
                 shapiro_lists.append({"SortIV": group_name, "Intensity": intensity,
-                                      "W": result[0], "p": result[1], "Violation": result[1] <= .05})
+                                      "W": shapiro[0], "p": shapiro[1], "Violation": shapiro[1] <= .05})
+
+        for intensity in ["Sedentary%", "Light%", "Moderate%", "Vigorous%", "MVPA%"]:
+            levene = scipy.stats.levene(by_group.get_group("HIGH")[intensity], by_group.get_group("LOW")[intensity])
+            levene_lists.append({"SortIV": "Group", "Intensity": intensity,
+                                 "W": levene[0], "p": levene[1], "Violation": levene[1] <= .05})
 
         # Data sorted by Model
         by_model = self.df_percent.groupby("Model")
+
         for model_name in ["Wrist", "Ankle", "HR", "HR-Acc"]:
-            for intensity in ["Sedentary%", "Light%", "Moderate%", "Vigorous%"]:
+            for intensity in ["Sedentary%", "Light%", "Moderate%", "Vigorous%", "MVPA%"]:
                 result = scipy.stats.shapiro(by_model.get_group(model_name)[intensity])
                 shapiro_lists.append({"SortIV": model_name, "Intensity": intensity,
                                       "W": result[0], "p": result[1], "Violation": result[1] <= .05})
 
+        for intensity in ["Sedentary%", "Light%", "Moderate%", "Vigorous%", "MVPA%"]:
+            levene = scipy.stats.levene(by_model.get_group("Wrist")[intensity], by_model.get_group("Ankle")[intensity])
+            levene_lists.append({"SortIV": "Wrist-Ankle", "Intensity": intensity,
+                                 "W": levene[0], "p": levene[1], "Violation": levene[1] <= .05})
+
+            levene = scipy.stats.levene(by_model.get_group("Wrist")[intensity], by_model.get_group("HR")[intensity])
+            levene_lists.append({"SortIV": "Wrist-HR", "Intensity": intensity,
+                                 "W": levene[0], "p": levene[1], "Violation": levene[1] <= .05})
+
+            levene = scipy.stats.levene(by_model.get_group("Wrist")[intensity], by_model.get_group("HR-Acc")[intensity])
+            levene_lists.append({"SortIV": "Wrist-HRAcc", "Intensity": intensity,
+                                 "W": levene[0], "p": levene[1], "Violation": levene[1] <= .05})
+
+            levene = scipy.stats.levene(by_model.get_group("Ankle")[intensity], by_model.get_group("HR")[intensity])
+            levene_lists.append({"SortIV": "Ankle-HR", "Intensity": intensity,
+                                 "W": levene[0], "p": levene[1], "Violation": levene[1] <= .05})
+
+            levene = scipy.stats.levene(by_model.get_group("Ankle")[intensity], by_model.get_group("HR-Acc")[intensity])
+            levene_lists.append({"SortIV": "Ankle-HRAcc", "Intensity": intensity,
+                                 "W": levene[0], "p": levene[1], "Violation": levene[1] <= .05})
+
+            levene = scipy.stats.levene(by_model.get_group("HR")[intensity], by_model.get_group("HR-Acc")[intensity])
+            levene_lists.append({"SortIV": "HR-HRAcc", "Intensity": intensity,
+                                 "W": levene[0], "p": levene[1], "Violation": levene[1] <= .05})
+
         self.shapiro_df = pd.DataFrame(shapiro_lists, columns=["SortIV", "Intensity", "W", "p", "Violation"])
+        self.levene_df = pd.DataFrame(levene_lists, columns=["SortIV", "Intensity", "W", "p", "Violation"])
+
+        print("\nSHAPIRO-WILK TEST FOR NORMALITY\n")
         print(self.shapiro_df)
+
+        print("\nLEVENE TEST FOR HOMOGENEITY OF VARIANCE\n")
+        print(self.levene_df)
 
         if show_plots:
             by_group.boxplot(column=["Sedentary%", "Light%", "Moderate%", "Vigorous%"])
             by_model.boxplot(column=["Sedentary%", "Light%", "Moderate%", "Vigorous%"])
 
-    def perform_anova(self, activity_intensity="Moderate", data_type="percent"):
+    def perform_activity_anova(self, activity_intensity="Moderate", data_type="percent"):
 
         if data_type == "percent":
             df = self.df_percent
@@ -1029,10 +1129,67 @@ class RelativeActivityEffect:
         plt.title("All Combination Means")
         plt.ylabel(" ")
 
+    def perform_kappa_anova(self):
 
-x = RelativeActivityEffect('/Users/kyleweber/Desktop/Data/OND07/Processed Data/'
-                           'Activity Level Comparison/ActivityGroupsData_AllActivityMinutes.xlsx')
-x.perform_anova(activity_intensity="Vigorous", data_type="percent")
+        # MIXED ANOVA  ------------------------------------------------------------------------------------------------
+        print("\nPerforming Group x Comparison mixed ANOVA on Cohen's Kappa values.")
 
-x.posthoc_nonpara.to_excel("/Users/kyleweber/Desktop/Nonpara.xlsx")
-x.posthoc_para.to_excel("/Users/kyleweber/Desktop/Para.xlsx")
+        # Group x Intensity mixed ANOVA
+        self.df_kappa_long = self.df_kappa.melt(id_vars=('ID', "Group"), var_name="Comparison", value_name="Kappa")
+
+        self.kappa_aov = pg.mixed_anova(dv="Kappa", within="Comparison", between="Group", subject="ID",
+                                        data=self.df_kappa_long, correction=True)
+        pg.print_table(self.kappa_aov)
+
+        # POST HOC ----------------------------------------------------------------------------------------------------
+        x.kappa_posthoc = pg.pairwise_ttests(dv="Kappa", subject='ID', within="Comparison", between='Group',
+                                                data=x.df_kappa_long,
+                                                padjust="bonf", effsize="cohen", parametric=True)
+
+    def plot_mains_effects_kappa(self):
+
+        plt.subplots(3, 1, figsize=(12, 7))
+        plt.suptitle("Cohen's Kappas (mean ± SD; n=10)")
+        plt.subplots_adjust(wspace=0.25)
+
+        plt.subplot(1, 3, 1)
+        comp_means = rp.summary_cont(self.df_kappa_long.groupby(['Comparison']))["Kappa"]["Mean"]
+        comp_sd = rp.summary_cont(self.df_kappa_long.groupby(['Comparison']))["Kappa"]["SD"]
+
+        plt.bar([i for i in comp_means.index], [i for i in comp_means.values],
+                yerr=[i for i in comp_sd], capsize=8, ecolor='black',
+                color=['purple', 'orange', 'red', 'yellow', 'blue', 'green'], edgecolor='black', linewidth=2)
+        plt.ylabel("Kappa")
+        plt.title("Model Comparison")
+        plt.yticks(np.arange(0, 1.1, 0.1))
+        plt.xticks(fontsize=8, rotation=45)
+        plt.yticks(fontsize=10)
+
+        plt.subplot(1, 3, 2)
+        group_means = rp.summary_cont(self.df_kappa_long.groupby(['Group']))["Kappa"]["Mean"]
+        group_sd = rp.summary_cont(self.df_kappa_long.groupby(['Group']))["Kappa"]["SD"]
+
+        plt.bar([i for i in group_sd.index], [i for i in group_means.values],
+                yerr=[i for i in group_sd], capsize=10, ecolor='black',
+                color=["lightgrey", "dimgrey"], alpha=0.5, edgecolor='black', linewidth=2)
+        plt.title("Activity Group")
+        plt.xlabel("Activity Level")
+        plt.yticks(np.arange(0, 1.1, 0.1))
+        plt.xticks(fontsize=8, rotation=45)
+        plt.yticks(fontsize=10)
+
+        plt.subplot(1, 3, 3)
+        sns.pointplot(data=self.df_kappa_long, x="Group", y="Kappa", hue="Comparison",
+                      dodge=False, markers='o', capsize=.1, errwidth=1, palette='Set1')
+        plt.title("Interaction")
+        plt.xticks(fontsize=8, rotation=45)
+        plt.yticks(np.arange(0, 1.1, 0.1))
+        plt.yticks(fontsize=10)
+        plt.ylabel(" ")
+        plt.xlabel("Activity Level")
+
+
+x = Objective3(activity_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Activity Level Comparison/'
+                                  'ActivityGroupsData_AllActivityMinutes.xlsx',
+               kappa_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Kappas_RepeatedOnly.xlsx')
+
