@@ -68,7 +68,7 @@ class Wrist:
             self.temperature.sample_rate = 0.25
 
         # Non-wear data
-        self.nonwear = Nonwear.Nonwear(accel_object=self)
+        # self.nonwear = Nonwear.Nonwear(accel_object=self)
 
         # Write results
         if self.write_results:
@@ -242,14 +242,6 @@ class Ankle:
                                           remove_baseline=self.remove_baseline, accel_only=self.accel_only,
                                           from_processed=self.from_processed, processed_folder=processed_folder)
 
-        if self.treadmill_log_file is None:
-            print("\n" + "Need treadmill protocol data to continue. Try again.")
-
-            plt.title("Set treadmill protocol walk indexes on datasheet")
-            plt.plot(np.arange(0, len(self.epoch.svm)), self.epoch.svm, color='black')
-            plt.ylabel("Counts")
-            plt.xlabel("Epoch Index")
-
         # Create Treadmill object
         self.treadmill = Treadmill(ankle_object=self)
 
@@ -381,52 +373,54 @@ class Treadmill:
         # Creates treadmill dictionary and walk speed data from spreadsheet data
         self.treadmill_dict, self.walk_speeds, self.walk_indexes = self.import_log()
 
-        self.avg_walk_counts = self.calculate_average_counts()
+        self.avg_walk_counts = self.calculate_average_tm_counts()
 
     def import_log(self):
         """Retrieves treadmill protocol information from spreadsheet for correct subject:
            -Protocol start time, walking speeds in m/s, data index that corresponds to start of protocol"""
 
         # Reads in relevant treadmill protocol details
-        log = np.loadtxt(fname=self.log_file, delimiter=",", dtype="str",
-                         usecols=(0, 3, 6, 9, 11, 13, 15, 17, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31), skiprows=1)
+        if self.log_file is not None:
 
-        for row in log:
-            # Only retrieves information for correct subject since all participants in one spreadsheet
-            if str(self.subjectID) in row[0]:
-                self.valid_data = True  # Data was found
-                date = row[1][0:4] + "/" + str(row[1][4:7]).title() + "/" + row[1][7:] + " " + row[2]
-                date_formatted = (datetime.strptime(date, "%Y/%b/%d %H:%M"))
+            log = np.loadtxt(fname=self.log_file, delimiter=",", dtype="str",
+                             usecols=(0, 3, 6, 9, 11, 13, 15, 17, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31), skiprows=1)
 
-                try:
-                    for i, stamp in enumerate(self.epoch_timestamps):
-                        if stamp < date_formatted:
-                            epoch_start_index = i
-                            break
-                except TypeError:
-                    epoch_start_index = "N/A"
+            for row in log:
+                # Only retrieves information for correct subject since all participants in one spreadsheet
+                if str(self.subjectID) in row[0]:
+                    self.valid_data = True  # Data was found
+                    date = row[1][0:4] + "/" + str(row[1][4:7]).title() + "/" + row[1][7:] + " " + row[2]
+                    date_formatted = (datetime.strptime(date, "%Y/%b/%d %H:%M"))
 
-                # Stores data and treadmill speeds (m/s) as dictionary
-                treadmill_dict = {"File": row[0], "ProtocolTime": date_formatted,
-                                  "StartIndex": epoch_start_index,
-                                  "60%": float(row[3]), "80%": float(row[4]),
-                                  "100%": float(row[5]), "120%": float(row[6]),
-                                  "140%": float(row[7])}
+                    try:
+                        for i, stamp in enumerate(self.epoch_timestamps):
+                            if stamp < date_formatted:
+                                epoch_start_index = i
+                                break
+                    except TypeError:
+                        epoch_start_index = "N/A"
 
-                # Same information as above; easier to access
-                walk_speeds = [treadmill_dict["60%"], treadmill_dict["80%"],
-                               treadmill_dict["100%"], treadmill_dict["120%"], treadmill_dict["140%"]]
+                    # Stores data and treadmill speeds (m/s) as dictionary
+                    treadmill_dict = {"File": row[0], "ProtocolTime": date_formatted,
+                                      "StartIndex": epoch_start_index,
+                                      "60%": float(row[3]), "80%": float(row[4]),
+                                      "100%": float(row[5]), "120%": float(row[6]),
+                                      "140%": float(row[7])}
 
-                try:
-                    walk_indexes = [int(row[i]) for i in range(8, len(row))]
-                    print("\n" + "Previous processed treadmill data found. Skipping processing.")
-                except ValueError:
-                    walk_indexes = []
-                    print("\n" + "No previous treadmill processing found. ")
-                    pass
+                    # Same information as above; easier to access
+                    walk_speeds = [treadmill_dict["60%"], treadmill_dict["80%"],
+                                   treadmill_dict["100%"], treadmill_dict["120%"], treadmill_dict["140%"]]
+
+                    try:
+                        walk_indexes = [int(row[i]) for i in range(8, len(row))]
+                        print("\n" + "Previous processed treadmill data found. Skipping processing.")
+                    except ValueError:
+                        walk_indexes = []
+                        print("\n" + "No previous treadmill processing found. ")
+                        pass
 
         # Sets treadmill_dict, walk_indexes and walk_speeds to empty objects if no treadmill data found in log
-        if not self.valid_data:
+        if self.log_file is None:
             treadmill_dict = {"File": "N/A", "ProtocolTime": "N/A",
                               "StartIndex": "N/A",
                               "60%": "N/A", "80%": "N/A",
@@ -517,7 +511,7 @@ class Treadmill:
 
             plt.show()
 
-    def calculate_average_counts(self):
+    def calculate_average_tm_counts(self):
         """Calculates average counts per epoch from the ankle accelerometer.
 
         :returns
@@ -576,7 +570,7 @@ class AnkleModel:
             self.walk_indexes = self.scale_epoch_indexes()
 
             # Adds average count data to self.tm_object since it has to be run in a weird order
-            self.calculate_average_counts()
+            self.calculate_average_tm_counts()
 
             # Values from regression equation
             self.r2 = None
@@ -604,9 +598,12 @@ class AnkleModel:
             self.predicted_mets_group, self.epoch_intensity_group, self.intensity_totals_groups = \
                 self.calculate_intensity(predicted_speed=self.linear_speed_group)
 
+            self.linear_speed = self.linear_speed_group
+
             # Sets individual regression values to group regression values
             self.epoch_intensity = self.epoch_intensity_group
             self.intensity_totals = self.intensity_totals_groups
+            self.predicted_mets = self.predicted_mets_group
 
     def scale_epoch_indexes(self):
         """Scales treadmill walk indexes if epoch length is not 15 seconds. Returns new list."""
@@ -621,7 +618,7 @@ class AnkleModel:
 
         return walk_indexes
 
-    def calculate_average_counts(self):
+    def calculate_average_tm_counts(self):
         """Calculates average activity count total for each treadmill walk."""
 
         self.tm_object.avg_walk_counts = [round(stats.mean(self.epoch_data[self.walk_indexes[index]:
