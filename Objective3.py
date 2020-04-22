@@ -1,9 +1,5 @@
 import LocateUsableParticipants
-from Subject import Subject
 import pandas as pd
-from statsmodels.stats.anova import AnovaRM
-from statsmodels.stats.multicomp import (pairwise_tukeyhsd, MultiComparison)
-import statsmodels.stats.power as smp
 from matplotlib import pyplot as plt
 import numpy as np
 import scipy
@@ -36,6 +32,8 @@ class Objective3:
         self.df_kappa_long = None
         self.shapiro_df = None
         self.levene_df = None
+        self.kappa_shapiro_df = None
+        self.kappa_levene_df = None
         self.aov = None
         self.kappa_aov = None
         self.posthoc_para = None
@@ -45,7 +43,6 @@ class Objective3:
         """RUNS METHODS"""
         self.load_data()
         # self.check_assumptions()
-        self.perform_kappa_anova()
 
     def load_data(self):
 
@@ -234,6 +231,50 @@ class Objective3:
         plt.title("All Combination Means")
         plt.ylabel(" ")
 
+    def check_kappa_assumptions(self, show_plots=False):
+        """Runs Shapiro-Wilk and Levene's test for each group x model combination and prints results.
+           Shows boxplots sorted by group and model"""
+
+        print("\n============================== Checking ANOVA assumptions ==============================")
+
+        # Results df
+        shapiro_lists = []
+
+        levene_lists = []
+
+        # Data sorted by Group
+        by_group = self.df_kappa_long.groupby("Group")
+
+        for group_name in ["HIGH", "LOW"]:
+            shapiro = scipy.stats.shapiro(by_group.get_group(group_name)["Kappa"])
+            shapiro_lists.append({"SortIV": group_name, "W": shapiro[0],
+                                  "p": shapiro[1], "Violation": shapiro[1] <= .05})
+
+        # Data sorted by comparison
+        by_comparison = self.df_kappa_long.groupby("Comparison")
+
+        for comp_name in ["Ankle-Wrist", "Wrist-HR", "Wrist-HRAcc", "Ankle-HR", "Ankle-HRAcc", "HR-HRAcc"]:
+            shapiro = scipy.stats.shapiro(by_comparison.get_group(comp_name)["Kappa"])
+            shapiro_lists.append({"SortIV": comp_name, "W": shapiro[0],
+                                  "p": shapiro[1], "Violation": shapiro[1] <= .05})
+
+        # Levene's test
+        levene = scipy.stats.levene(by_group.get_group("HIGH")["Kappa"], by_group.get_group("LOW")["Kappa"])
+        levene_lists.append({"SortIV": "Group", "W": levene[0], "p": levene[1], "Violation": levene[1] <= .05})
+
+        self.kappa_shapiro_df = pd.DataFrame(shapiro_lists, columns=["SortIV", "W", "p", "Violation"])
+        self.kappa_levene_df = pd.DataFrame(levene_lists, columns=["SortIV", "W", "p", "Violation"])
+
+        print("\nSHAPIRO-WILK TEST FOR NORMALITY\n")
+        print(self.kappa_shapiro_df)
+
+        print("\nLEVENE TEST FOR HOMOGENEITY OF VARIANCE\n")
+        #print(self.kappa_levene_df)
+
+        if show_plots:
+            by_group.boxplot(column=["Sedentary%", "Light%", "Moderate%", "Vigorous%"])
+            by_model.boxplot(column=["Sedentary%", "Light%", "Moderate%", "Vigorous%"])
+
     def perform_kappa_anova(self):
 
         # MIXED ANOVA  ------------------------------------------------------------------------------------------------
@@ -251,13 +292,12 @@ class Objective3:
                                                 data=self.df_kappa_long,
                                                 padjust="bonf", effsize="cohen", parametric=True)
 
-    def calculate_generalized_eta_squared_kappa(self):
-        pass
-
     def plot_mains_effects_kappa(self):
 
+        n_per_group = int(len(set(self.df_kappa_long["ID"])) / len(set(self.df_kappa_long["Group"])))
+
         plt.subplots(3, 1, figsize=(12, 7))
-        plt.suptitle("Cohen's Kappas (mean ± SD; n=10)")
+        plt.suptitle("Cohen's Kappas (mean ± SD; n/group={})".format(n_per_group))
         plt.subplots_adjust(wspace=0.25)
 
         plt.subplot(1, 3, 1)
@@ -300,4 +340,39 @@ class Objective3:
 x = Objective3(activity_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Activity Level Comparison/'
                                   'ActivityGroupsData_AllActivityMinutes.xlsx',
                kappa_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Kappas_RepeatedOnly.xlsx')
+x.check_assumptions(False)
+x.perform_kappa_anova()
 # x.perform_activity_anova("Sedentary")
+
+
+class KappaMethod:
+
+    def __init__(self):
+        self.data = None
+        self.data_long = None
+        self.aov = None
+
+        """RUNS METHOD"""
+        self.organize_data()
+        self.run_stats()
+
+    def organize_data(self):
+
+        id = [3024, 3026, 3029, 3030, 3031, 3032, 3034, 3037, 3039, 3043]
+        groups = [1, 0, 1, 0, 1, 1, 0, 0, 0, 1]
+        ao = [.501, .4236, .5418, .6405, .4772, .4913, .3483, .3001, .3516, .6436]
+        va = [.5466, .4728, .5615, .571, .559, .5449, .3237, .4116, .3456, .7124]
+
+        self.data = pd.DataFrame(list(zip(id, groups, ao, va)), columns=["ID", "Group", "AccelOnly", "ValidAll"])
+
+        self.data_long = self.data.melt(id_vars=('ID', "Group"), var_name="Method", value_name="Kappa")
+
+    def run_stats(self):
+
+        self.aov = pg.mixed_anova(dv="Kappa", within="Method", between="Group", subject="ID",
+                                  data=self.data_long, correction=True)
+
+        print(self.aov)
+
+
+KappaMethod()
