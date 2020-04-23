@@ -27,6 +27,7 @@ class Objective1:
         self.activity_data_file = activity_data_file
         self.intensity = intensity
         self.df_percent = None
+        self.descriptive_stats = None
         self.shapiro_df = None
         self.levene_df = None
         self.aov = None
@@ -44,6 +45,11 @@ class Objective1:
         self.df_percent = df[["ID", 'Group', 'Model', 'Sedentary%', 'Light%', 'Moderate%', 'Vigorous%']]
 
         self.df_percent["MVPA%"] = self.df_percent["Moderate%"] + self.df_percent["Vigorous%"]
+        self.df_percent["TotalActive%"] = self.df_percent["Light%"] + self.df_percent["MVPA%"]
+
+        means = self.df_percent.describe().iloc[1, 1:]
+        sd = self.df_percent.describe().iloc[2, 1:]
+        self.descriptive_stats = pd.DataFrame(list(zip(means.keys(), means, sd)), columns=["Intensity", "Mean", "SD"])
 
     def check_assumptions(self, show_plots=False):
 
@@ -101,12 +107,13 @@ class Objective1:
 
     def plot_main_effects(self):
 
-        plt.subplots(2, 2, figsize=(12, 7))
-        plt.subplots_adjust(hspace=.30)
+        plt.subplots(2, 3, figsize=(10, 6))
+        plt.subplots_adjust(hspace=.3, wspace=0.25)
 
-        plt.suptitle("Effect of Model on Total Activity")
+        plt.suptitle("Activity Totals by Model (Mean ± SD)")
 
-        plt.subplot(2, 2, 1)
+        # SEDENTARY
+        plt.subplot(2, 3, 1)
         model_means = rp.summary_cont(self.df_percent.groupby(['Model']))["Sedentary%"]["Mean"]
         model_sd = rp.summary_cont(self.df_percent.groupby(['Model']))["Sedentary%"]["SD"]
         plt.bar([i for i in model_sd.index], [100 * i for i in model_means.values],
@@ -115,7 +122,8 @@ class Objective1:
         plt.ylabel("% of Collection")
         plt.title("Sedentary")
 
-        plt.subplot(2, 2, 2)
+        # LIGHT
+        plt.subplot(2, 3, 2)
         model_means = rp.summary_cont(self.df_percent.groupby(['Model']))["Light%"]["Mean"]
         model_sd = rp.summary_cont(self.df_percent.groupby(['Model']))["Light%"]["SD"]
         plt.bar([i for i in model_sd.index], [100 * i for i in model_means.values],
@@ -124,23 +132,45 @@ class Objective1:
         plt.ylabel(" ")
         plt.title("Light")
 
-        plt.subplot(2, 2, 3)
+        # MODERATE
+        plt.subplot(2, 3, 3)
         model_means = rp.summary_cont(self.df_percent.groupby(['Model']))["Moderate%"]["Mean"]
         model_sd = rp.summary_cont(self.df_percent.groupby(['Model']))["Moderate%"]["SD"]
         plt.bar([i for i in model_sd.index], [100 * i for i in model_means.values],
                 yerr=[i * 100 for i in model_sd], capsize=10, ecolor='black',
                 color=["Red", "Blue", "Green", "Purple"], edgecolor='black', linewidth=2)
-        plt.ylabel("% of Collection")
+        plt.ylabel(" ")
         plt.title("Moderate")
 
-        plt.subplot(2, 2, 4)
+        # VIGOROUS
+        plt.subplot(2, 3, 4)
         model_means = rp.summary_cont(self.df_percent.groupby(['Model']))["Vigorous%"]["Mean"]
         model_sd = rp.summary_cont(self.df_percent.groupby(['Model']))["Vigorous%"]["SD"]
         plt.bar([i for i in model_sd.index], [100 * i for i in model_means.values],
                 yerr=[i * 100 for i in model_sd], capsize=10, ecolor='black',
                 color=["Red", "Blue", "Green", "Purple"], edgecolor='black', linewidth=2)
-        plt.ylabel(" ")
+        plt.ylabel("% of Collection")
         plt.title("Vigorous")
 
+        # MVPA
+        plt.subplot(2, 3, 5)
+        model_means = rp.summary_cont(self.df_percent.groupby(['Model']))["MVPA%"]["Mean"]
+        model_sd = rp.summary_cont(self.df_percent.groupby(['Model']))["MVPA%"]["SD"]
+        plt.bar([i for i in model_sd.index], [100 * i for i in model_means.values],
+                yerr=[i * 100 for i in model_sd], capsize=10, ecolor='black',
+                color=["Red", "Blue", "Green", "Purple"], edgecolor='black', linewidth=2)
+        plt.ylabel(" ")
+        plt.title("MVPA")
 
-# x = Objective1(intensity="Sedentary%")
+        # TOTAL NON-SEDENTARY
+        plt.subplot(2, 3, 6)
+        model_means = rp.summary_cont(self.df_percent.groupby(['Model']))["TotalActive%"]["Mean"]
+        model_sd = rp.summary_cont(self.df_percent.groupby(['Model']))["TotalActive%"]["SD"]
+        plt.bar([i for i in model_sd.index], [100 * i for i in model_means.values],
+                yerr=[i * 100 for i in model_sd], capsize=10, ecolor='black',
+                color=["Red", "Blue", "Green", "Purple"], edgecolor='black', linewidth=2)
+        plt.ylabel(" ")
+        plt.title("Any Activity")
+
+
+# x = Objective1(intensity="Moderate%")
