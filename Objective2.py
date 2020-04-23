@@ -26,6 +26,8 @@ class Objective2:
         self.oneway_rm_aov = None
         self.ttests_unpaired = None
         self.ttests_paired = None
+        self.corr_mat = None
+        self.descriptive_stats_kappa = None
 
         """RUNS METHODS"""
         self.load_data()
@@ -33,8 +35,14 @@ class Objective2:
         self.pairwise_ttests_unpaired()
 
     def load_data(self):
+
         self.df = pd.read_excel(self.data_file, usecols=["ID", "Ankle-Wrist", "Wrist-HR", "Wrist-HRAcc",
                                                          "Ankle-HR", "Ankle-HRAcc", "HR-HRAcc"])
+
+        self.corr_mat = self.df.corr()
+
+        self.descriptive_stats_kappa = self.df.describe().loc[["mean", "std"]].iloc[:, 1:].transpose()
+        self.descriptive_stats_kappa.columns = ["Kappa_mean", "Kappa_sd"]
 
     def check_normality(self):
         for col_name in self.df.keys():
@@ -47,7 +55,7 @@ class Objective2:
 
         self.ttests_unpaired = pg.pairwise_ttests(dv="value", subject='ID',
                                                   between='variable', data=df,
-                                                  padjust="bonf", effsize="cohen", parametric=True)
+                                                  padjust="bonf", effsize="hedges", parametric=True)
 
     def pairwise_ttests_paired(self):
 
@@ -57,8 +65,7 @@ class Objective2:
 
         self.ttests_paired = pg.pairwise_ttests(dv="value", subject='ID',
                                                 within='variable', data=df,
-                                                padjust="bonf", effsize="CLES", parametric=True)
+                                                padjust="bonf", effsize="hedges", parametric=True)
 
 
-# a = Objective2(data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Kappas_AllData.xlsx')
-# b = Objective2(data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Kappas_RepeatedOnly.xlsx')
+# x = Objective2(data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Kappa - RepeatedOnly.xlsx')
