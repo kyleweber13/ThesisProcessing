@@ -34,6 +34,8 @@ class Objective3:
         self.levene_df = None
         self.kappa_shapiro_df = None
         self.kappa_levene_df = None
+        self.descriptive_stats_activity = None
+        self.descriptive_stats_kappa = None
         self.aov = None
         self.kappa_aov = None
         self.posthoc_para = None
@@ -46,7 +48,7 @@ class Objective3:
 
     def load_data(self):
 
-        # Activity Minutes/Percent
+        # Activity Minutes/Percent ------------------------------------------------------------------------------------
         df = pd.read_excel(self.activity_data_file)
 
         self.df_mins = df[["ID", 'Group', 'Model', 'Sedentary', 'Light', 'Moderate', 'Vigorous']]
@@ -54,8 +56,41 @@ class Objective3:
 
         self.df_percent["MVPA%"] = self.df_percent["Moderate%"] + self.df_percent["Vigorous%"]
 
-        # Cohen's Kappa data
-        self.df_kappa = pd.read_excel(self.kappa_data_file)
+        model_d = self.df_percent.groupby("Model").describe()
+        group_d = self.df_percent.groupby("Group").describe()
+
+        group_d = pd.concat([group_d, model_d])
+
+        self.descriptive_stats_activity = pd.DataFrame(list(zip(["HIGH", "LOW", "Ankle", "HR", "HR-Acc", "Wrist"],
+                                                                group_d["Sedentary%"]["mean"],
+                                                                group_d["Sedentary%"]["std"],
+                                                                group_d["Light%"]["mean"],
+                                                                group_d["Light%"]["std"],
+                                                                group_d["Moderate%"]["mean"],
+                                                                group_d["Moderate%"]["std"],
+                                                                group_d["Vigorous%"]["mean"],
+                                                                group_d["Vigorous%"]["std"],
+                                                                group_d["MVPA%"]["mean"],
+                                                                group_d["MVPA%"]["std"])),
+                                                       columns=["IV", "Sedentary_mean", "Sedentary_sd",
+                                                                "Light_mean", "Light_sd",
+                                                                "Moderate_mean", "Moderate_sd",
+                                                                "Vigorous_mean", "Vigorous_sd",
+                                                                "MVPA_mean", "MVPA_sd"])
+
+        # Cohen's Kappa data -----------------------------------------------------------------------------------------
+        self.df_kappa = pd.read_excel(self.kappa_data_file, sheet_name="Data")
+        self.df_kappa_long = self.df_kappa.melt(id_vars=('ID', "Group"), var_name="Comparison", value_name="Kappa")
+
+        comp_d = self.df_kappa_long.groupby("Comparison").describe()
+        group_d = self.df_kappa_long.groupby("Group").describe()
+
+        group_d = pd.concat([group_d, comp_d])
+
+        self.descriptive_stats_kappa = pd.DataFrame(list(zip(["HIGH", "LOW", "Ankle-HR", "Ankle-HRAcc", "Ankle-Wrist",
+                                                              "HR-HRAcc", "Wrist-HR", "Wrist-HRAcc"],
+                                                             group_d["Kappa"]["mean"], group_d["Kappa"]["std"])),
+                                                    columns=["IV", "Kappa_mean", "Kappa_sd"])
 
     def check_assumptions(self, show_plots=False):
         """Runs Shapiro-Wilk and Levene's test for each group x model combination and prints results.
@@ -189,14 +224,15 @@ class Objective3:
         posthoc_para = pg.pairwise_ttests(dv=activity_intensity, subject='ID',
                                           within="Model", between='Group',
                                           data=df,
-                                          padjust="bonf", effsize="cohen", parametric=True)
+                                          padjust="bonf", effsize="hedges", parametric=True)
         posthoc_nonpara = pg.pairwise_ttests(dv=activity_intensity, subject='ID',
                                              within="Model", between='Group',
                                              data=df,
-                                             padjust="bonf", effsize="cohen", parametric=False)
+                                             padjust="bonf", effsize="hedges", parametric=False)
 
         self.posthoc_para = posthoc_para
         self.posthoc_nonpara = posthoc_nonpara
+
         pg.print_table(posthoc_para)
         pg.print_table(posthoc_nonpara)
 
@@ -269,7 +305,7 @@ class Objective3:
         print(self.kappa_shapiro_df)
 
         print("\nLEVENE TEST FOR HOMOGENEITY OF VARIANCE\n")
-        #print(self.kappa_levene_df)
+        # print(self.kappa_levene_df)
 
         if show_plots:
             by_group.boxplot(column=["Sedentary%", "Light%", "Moderate%", "Vigorous%"])
@@ -281,8 +317,6 @@ class Objective3:
         print("\nPerforming Group x Comparison mixed ANOVA on Cohen's Kappa values.")
 
         # Group x Intensity mixed ANOVA
-        self.df_kappa_long = self.df_kappa.melt(id_vars=('ID', "Group"), var_name="Comparison", value_name="Kappa")
-
         self.kappa_aov = pg.mixed_anova(dv="Kappa", within="Comparison", between="Group", subject="ID",
                                         data=self.df_kappa_long, correction=True)
         pg.print_table(self.kappa_aov)
@@ -337,17 +371,24 @@ class Objective3:
         plt.xlabel("Activity Level")
 
 
-x = Objective3(activity_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Activity Level Comparison/'
-                                  'ActivityGroupsData_AllActivityMinutes.xlsx',
-               kappa_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Kappas_RepeatedOnly.xlsx')
-x.check_assumptions(False)
+x = Objective3(activity_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/'
+                                  'Activity and Kappa Data/ActivityGroupsData_AllActivityMinutes.xlsx',
+               kappa_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/'
+                               'Activity and Kappa Data/Kappa - RepeatedOnly.xlsx')
+# x.check_kappa_assumptions(False)
 x.perform_kappa_anova()
-# x.perform_activity_anova("Sedentary")
+# x.perform_activity_anova("Vigorous")
 
 
 class KappaMethod:
 
     def __init__(self):
+        """Statistical analysis to determine if kappa values for the Ankle-Wrist comparison using ValidAll vs.
+           AccelOnly data are different.
+
+            Runs two-way mixed ANOVA (Group x DataMethod)
+        """
+
         self.data = None
         self.data_long = None
         self.aov = None
@@ -373,6 +414,3 @@ class KappaMethod:
                                   data=self.data_long, correction=True)
 
         print(self.aov)
-
-
-KappaMethod()
