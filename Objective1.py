@@ -18,8 +18,8 @@ usable_subjs = LocateUsableParticipants.SubjectSubset(check_file="/Users/kyleweb
 
 class Objective1:
 
-    def __init__(self, activity_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/'
-                                          'Activity Level Comparison/ActivityGroupsData_AllActivityMinutes.xlsx',
+    def __init__(self, activity_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Activity and Kappa Data/'
+                                          '3a_Activity_RepeteadOnlyActivityMinutes.xlsx',
                  intensity=None):
 
         os.chdir("/Users/kyleweber/Desktop/")
@@ -47,9 +47,16 @@ class Objective1:
         self.df_percent["MVPA%"] = self.df_percent["Moderate%"] + self.df_percent["Vigorous%"]
         self.df_percent["TotalActive%"] = self.df_percent["Light%"] + self.df_percent["MVPA%"]
 
-        means = self.df_percent.describe().iloc[1, 1:]
-        sd = self.df_percent.describe().iloc[2, 1:]
-        self.descriptive_stats = pd.DataFrame(list(zip(means.keys(), means, sd)), columns=["Intensity", "Mean", "SD"])
+        # means = self.df_percent.describe().iloc[1, 1:]
+        # sd = self.df_percent.describe().iloc[2, 1:]
+        # self.descriptive_stats = pd.DataFrame(list(zip(means.keys(), means, sd)), columns=["Intensity", "Mean", "SD"])
+
+        means = self.df_percent.groupby("Model").mean()
+        stds = self.df_percent.groupby("Model").std()
+        stds.columns = ["IDSD", "SedentarySD", "LightSD", "ModerateSD", "VigorousSD", "MVPASD", "TotalActiveSD"]
+
+        self.descriptive_stats = pd.concat([means, stds], axis=1)
+        self.descriptive_stats = self.descriptive_stats.drop(columns=["ID", "IDSD"])
 
     def check_assumptions(self, show_plots=False):
 
@@ -173,4 +180,4 @@ class Objective1:
         plt.title("Any Activity")
 
 
-# x = Objective1(intensity="Moderate%")
+x = Objective1(intensity="Sedentary%")
