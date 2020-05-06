@@ -3,7 +3,8 @@ import pandas as pd
 import scipy
 import os
 import pingouin as pg
-
+import seaborn as sns
+import numpy as np
 
 usable_subjs = LocateUsableParticipants.SubjectSubset(check_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/"
                                                                  "OND07_ProcessingStatus.xlsx",
@@ -17,9 +18,9 @@ usable_subjs = LocateUsableParticipants.SubjectSubset(check_file="/Users/kyleweb
 
 class Objective2:
 
-    def __init__(self, data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Kappas_AllData.xlsx'):
+    def __init__(self, data_file):
 
-        os.chdir("/Users/kyleweber/Desktop/")
+        # os.chdir("/Users/kyleweber/Desktop/")
 
         self.data_file = data_file
         self.df = None
@@ -44,6 +45,8 @@ class Objective2:
         self.descriptive_stats_kappa = self.df.describe().loc[["mean", "std"]].iloc[:, 1:].transpose()
         self.descriptive_stats_kappa.columns = ["Kappa_mean", "Kappa_sd"]
 
+        self.descriptive_stats_kappa["Kappa_sem"] = self.descriptive_stats_kappa["Kappa_sd"] / self.df.shape[0] ** .5
+
     def check_normality(self):
         for col_name in self.df.keys():
             result = scipy.stats.shapiro(self.df[col_name].dropna())
@@ -65,7 +68,29 @@ class Objective2:
 
         self.ttests_paired = pg.pairwise_ttests(dv="value", subject='ID',
                                                 within='variable', data=df,
-                                                padjust="bonf", effsize="hedges", parametric=True)
+                                                padjust="holm", effsize="hedges", parametric=True)
+
+    def plot_boxplot(self):
+
+        df = self.df.copy()
+        df["ID_num"] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+        long = df.iloc[:, 1:].melt(id_vars=["ID_num"], value_name="Kappa")
+        long.columns = ["ID", "Comparison", "Kappa"]
+
+        sns.set(style="ticks")
+        ax = sns.boxplot(data=df.iloc[:, 1:-1], color='white', fliersize=0)
+        ax = sns.stripplot(data=long, x="Comparison", y="Kappa", hue="ID", palette="bright", jitter=True,
+                           edgecolor='black',
+                           order=["Ankle-Wrist", "Wrist-HR", "Wrist-HRAcc", "Ankle-HR", "Ankle-HRAcc", "HR-HRAcc"])
+        ax.legend_.remove()
+        ax.set_xlabel("")
+        ax.set_yticks(np.arange(0, 1.1, .1))
+        ax.set_title("Objective #2: Kappa by Model and Participant")
+        ax.set_ylim(0, 1)
 
 
-# x = Objective2(data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Kappa - RepeatedOnly.xlsx')
+x = Objective2(data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Activity and Kappa Data/'
+                         '3b_Kappa_RepeatedParticipantsOnly.xlsx')
+
+x.plot_boxplot()
