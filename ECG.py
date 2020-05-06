@@ -93,6 +93,8 @@ class ECG:
             del self.ecg
 
         # Performs quality control check on raw data and epochs data
+        if self.from_processed:
+            self.epoch_validity, self.epoch_hr = None, None
         if not self.from_processed:
             self.epoch_validity, self.epoch_hr = self.check_quality()
 
@@ -117,7 +119,7 @@ class ECG:
         # self.epoch_intensity, self.intensity_totals = self.calculate_intensity()
 
         if self.write_results:
-            self.write_output()
+            self.write_model()
 
     def check_quality(self):
         """Performs quality check using Orphanidou et al. (2015) algorithm that has been tweaked to factor in voltage
@@ -226,7 +228,7 @@ class ECG:
 
         return epoch_timestamps_formatted, epoch_validity, epoch_hr
 
-    def find_resting_hr(self, window_size=60, n_windows=10, sleep_status=None, start_index=None, end_index=None):
+    def find_resting_hr(self, window_size, n_windows, sleep_status=None, start_index=None, end_index=None):
         """Function that calculates resting HR based on inputs.
 
         :argument
@@ -255,7 +257,7 @@ class ECG:
 
             sorted_hr = sorted(awake_hr)
 
-            resting_hr = round(sum(sorted_hr[:n_windows]) / n_windows, 1)
+            resting_hr = round(sum(sorted_hr[0:n_windows]) / n_windows, 1)
 
             print("Resting HR (average of {} lowest {}-second periods while awake) is {} bpm.".format(n_windows,
                                                                                                       window_size,
@@ -455,12 +457,12 @@ class ECG:
                                                validity_data.rule_check_dict["Correlation Valid"]))
 
         # Plot
+        plt.close("all")
         fig, (ax1, ax2) = plt.subplots(2, sharex='col', figsize=(10, 7))
 
         valid_period = "Valid" if validity_data.rule_check_dict["Valid Period"] else "Invalid"
 
         ax1.set_title("Participant {}: {} (index = {})".format(self.subjectID, valid_period, start_index))
-        # ax1.set_title("Participant {}".format(self.subjectID))
 
         # Filtered ECG data
         ax1.plot(seconds_seq_raw, self.filtered[start_index:end_index], color='black', label="Filtered ECG")
@@ -480,25 +482,19 @@ class ECG:
 
         ax2.set_xlabel("Seconds")
 
-        # Turns background green if valid
-        """if valid_period == "Valid":
-            ax1.fill_between(x=seconds_seq_raw,
-                             y1=min(self.filtered[start_index:end_index]),
-                             y2=max(self.filtered[start_index:end_index]), color='green', alpha=0.1)"""
-
         return validity_data
 
-    def write_output(self):
+    def write_model(self):
         """Writes csv of epoched timestamps, validity category."""
 
-        with open(self.output_dir + "Model Output/" + self.filename + "_IntensityData.csv", "w") as outfile:
+        with open(self.output_dir + self.filename + "_IntensityData.csv", "w") as outfile:
             writer = csv.writer(outfile, delimiter=',', lineterminator="\n")
 
             writer.writerow(["Timestamp", "Validity(1=invalid)", "AverageHR", "%HRR", "IntensityCategory"])
             writer.writerows(zip(self.epoch_timestamps, self.epoch_validity, self.epoch_hr,
                                  self.perc_hrr, self.epoch_intensity))
 
-        print("\n" + "Complete. File {} saved.".format(self.output_dir + "Model Output/" +
+        print("\n" + "Complete. File {} saved.".format(self.output_dir +
                                                        self.filename + "_IntensityData.csv"))
 
 
