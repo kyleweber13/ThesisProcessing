@@ -7,6 +7,7 @@ import os
 import seaborn as sns
 import researchpy as rp
 import pingouin as pg
+import statsmodels.stats.api as sms
 
 """usable_subjs = LocateUsableParticipants.SubjectSubset(check_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/"
                                                                  "OND07_ProcessingStatus.xlsx",
@@ -87,6 +88,8 @@ class Objective4:
         self.df_kappa = pd.read_excel(self.kappa_data_file, sheet_name="Data")
         self.df_kappa_long = self.df_kappa.melt(id_vars=('ID', "Group"), var_name="Comparison", value_name="Kappa")
 
+        self.df_kappa["Z"] = scipy.stats.zscore(self.df_kappa.iloc[:, -1])
+
         comp_d = self.df_kappa_long.groupby("Comparison").describe()
         group_d = self.df_kappa_long.groupby("Group").describe()
 
@@ -123,14 +126,27 @@ class Objective4:
         # Data sorted by Model
         by_model = self.df_percent.groupby("Model")
 
-        for model_name in ["Wrist", "HR"]:
-            for intensity in ["Sedentary%", "Light%", "Moderate%", "Vigorous%", "MVPA%"]:
-                result = scipy.stats.shapiro(by_model.get_group(model_name)[intensity])
-                shapiro_lists.append({"SortIV": model_name, "Intensity": intensity,
-                                      "W": result[0], "p": result[1], "Violation": result[1] <= .05})
+        try:
+            for model_name in ["Wrist", "HR"]:
+                for intensity in ["Sedentary%", "Light%", "Moderate%", "Vigorous%", "MVPA%"]:
+                    result = scipy.stats.shapiro(by_model.get_group(model_name)[intensity])
+                    shapiro_lists.append({"SortIV": model_name, "Intensity": intensity,
+                                          "W": result[0], "p": result[1], "Violation": result[1] <= .05})
+        except KeyError:
+            for model_name in ["Wrist", "Ankle"]:
+                for intensity in ["Sedentary%", "Light%", "Moderate%", "Vigorous%", "MVPA%"]:
+                    result = scipy.stats.shapiro(by_model.get_group(model_name)[intensity])
+                    shapiro_lists.append({"SortIV": model_name, "Intensity": intensity,
+                                          "W": result[0], "p": result[1], "Violation": result[1] <= .05})
 
         for intensity in ["Sedentary%", "Light%", "Moderate%", "Vigorous%", "MVPA%"]:
-            levene = scipy.stats.levene(by_model.get_group("Wrist")[intensity], by_model.get_group("HR")[intensity])
+            try:
+                levene = scipy.stats.levene(by_model.get_group("Wrist")[intensity],
+                                            by_model.get_group("HR")[intensity])
+            except KeyError:
+                levene = scipy.stats.levene(by_model.get_group("Wrist")[intensity],
+                                            by_model.get_group("Ankle")[intensity])
+
             levene_lists.append({"SortIV": "Wrist-Ankle", "Intensity": intensity,
                                  "W": levene[0], "p": levene[1], "Violation": levene[1] <= .05})
 
@@ -301,10 +317,16 @@ class Objective4:
                       data.iloc[2][0], data.iloc[2][1],
                       data.iloc[3][0], data.iloc[3][1], data.iloc[4][0], data.iloc[4][1]]
 
-        data = self.shapiro_df.loc[self.shapiro_df["SortIV"] == "HR"][["W", "p"]]
-        hr_list = ["HR", data.iloc[0][0], data.iloc[0][1], data.iloc[1][0], data.iloc[1][1], data.iloc[2][0],
-                   data.iloc[2][1],
-                   data.iloc[3][0], data.iloc[3][1], data.iloc[4][0], data.iloc[4][1]]
+        try:
+            data = self.shapiro_df.loc[self.shapiro_df["SortIV"] == "HR"][["W", "p"]]
+            hr_list = ["HR", data.iloc[0][0], data.iloc[0][1], data.iloc[1][0], data.iloc[1][1], data.iloc[2][0],
+                       data.iloc[2][1],
+                       data.iloc[3][0], data.iloc[3][1], data.iloc[4][0], data.iloc[4][1]]
+        except (IndexError, KeyError):
+            data = self.shapiro_df.loc[self.shapiro_df["SortIV"] == "Ankle"][["W", "p"]]
+            hr_list = ["Ankle", data.iloc[0][0], data.iloc[0][1], data.iloc[1][0], data.iloc[1][1], data.iloc[2][0],
+                       data.iloc[2][1],
+                       data.iloc[3][0], data.iloc[3][1], data.iloc[4][0], data.iloc[4][1]]
 
         self.shapiro_results = pd.DataFrame(list(zip(high_list, low_list, wrist_list, hr_list))).transpose()
 
@@ -429,15 +451,34 @@ class Objective4:
         if write_file:
             self.posthoc_results.to_excel("4a_{}_PostHoc.xlsx".format(intensity))
 
+    def calculate_kappa_cis(self):
 
-x = Objective4(activity_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/'
-                                  'Activity and Kappa Data/ActivityGroupsData_WristHRActivityMinutes.xlsx',
-               kappa_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/'
-                               'Activity and Kappa Data/Kappa - WristHR.xlsx')
+        ci_range_high = sms.DescrStatsW(self.df_kappa.groupby("Group").get_group("HIGH")["Kappa"]).tconfint_mean()
+        ci_width_high = (ci_range_high[1] - ci_range_high[0]) / 2
 
-x.check_kappa_assumptions(False)
-x.perform_kappa_ttest()
+        ci_range_low = sms.DescrStatsW(self.df_kappa.groupby("Group").get_group("LOW")["Kappa"]).tconfint_mean()
+        ci_width_low = (ci_range_low[1] - ci_range_low[0]) / 2
+
+        ci_range_all = sms.DescrStatsW(self.df_kappa["Kappa"]).tconfint_mean()
+        ci_width_all = (ci_range_all[1] - ci_range_all[0]) / 2
+
+        print("\nKappa 95%CI width (HIGH, LOW, ALL) = {}, {}, {}".format(round(ci_width_high, 5),
+                                                                         round(ci_width_low, 5),
+                                                                         round(ci_width_all, 5)))
+
+
+x = Objective4(activity_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Activity and Kappa Data/'
+                                  '4a_Activity_AnkleWrist_ByAnkle.xlsx',
+               kappa_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Activity and Kappa Data/'
+                               '4b_Kappa_AnkleWrist_ByAnkle.xlsx')
+
+# x.check_kappa_assumptions(False)
+# x.perform_kappa_ttest()
 # x.check_assumptions(True)
 # x.perform_activity_anova(activity_intensity="MVPA", data_type="percent")
+# x.create_output_files(write_files=True)
+# x.df_percent.groupby(["Model", "Group"]).mean()
+# x.df_percent.groupby(["Model", "Group"]).sem().to_excel("/Users/kyleweber/Desktop/Out.xlsx")
 
-x.create_output_files(write_files=True)
+ci_range = sms.DescrStatsW(x.df_kappa.groupby("Group").get_group("HIGH")["Kappa"]).tconfint_mean()
+ci_width = (ci_range[1] - ci_range[0]) / 2

@@ -5,6 +5,8 @@ import scipy
 import os
 import researchpy as rp
 import pingouin as pg
+import numpy as np
+import statsmodels.stats.api as sms
 
 usable_subjs = LocateUsableParticipants.SubjectSubset(check_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/"
                                                                  "OND07_ProcessingStatus.xlsx",
@@ -32,9 +34,11 @@ class Objective1:
         self.levene_df = None
         self.aov = None
         self.posthoc = None
+        self.df_ci = None
 
         """RUNS METHODS"""
         self.load_data()
+        self.calculate_cis()
         self.perform_anova(intensity=self.intensity)
 
     def load_data(self):
@@ -178,6 +182,27 @@ class Objective1:
                 color=["Red", "Blue", "Green", "Purple"], edgecolor='black', linewidth=2)
         plt.ylabel(" ")
         plt.title("Any Activity")
+
+    def calculate_cis(self):
+
+        cis = []
+        for column in [3, 4, 7]:
+            data = self.df_percent[["ID", "Model", self.df_percent.keys()[column]]]
+
+            for model in ["Ankle", "HR", "HR-Acc", "Wrist"]:
+                ci_range = sms.DescrStatsW(data.groupby("Model").
+                                           get_group(model)[self.df_percent.keys()[column]]).tconfint_mean()
+                ci_width = (ci_range[1] - ci_range[0]) / 2
+
+                print("{} - {}: {}".format(model, self.df_percent.keys()[column], round(ci_width, 5)))
+
+                cis.append(ci_width)
+
+        output = np.array(cis).reshape(3, 4)
+
+        self.df_ci = pd.DataFrame(output).transpose()
+        self.df_ci.columns = ["Sedentary", "Light", "MVPA"]
+        self.df_ci.insert(loc=0, column="Model", value=["Ankle", "HR", "HR-Acc", "Wrist"])
 
 
 x = Objective1(intensity="Sedentary%")

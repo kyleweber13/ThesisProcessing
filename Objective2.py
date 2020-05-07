@@ -5,6 +5,7 @@ import os
 import pingouin as pg
 import seaborn as sns
 import numpy as np
+import statsmodels.stats.api as sms
 
 usable_subjs = LocateUsableParticipants.SubjectSubset(check_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/"
                                                                  "OND07_ProcessingStatus.xlsx",
@@ -29,9 +30,11 @@ class Objective2:
         self.ttests_paired = None
         self.corr_mat = None
         self.descriptive_stats_kappa = None
+        self.kappa_cis = None
 
         """RUNS METHODS"""
         self.load_data()
+        self.calculate_cis()
         self.pairwise_ttests_paired()
         self.pairwise_ttests_unpaired()
 
@@ -40,7 +43,8 @@ class Objective2:
         self.df = pd.read_excel(self.data_file, usecols=["ID", "Ankle-Wrist", "Wrist-HR", "Wrist-HRAcc",
                                                          "Ankle-HR", "Ankle-HRAcc", "HR-HRAcc"])
 
-        self.corr_mat = self.df.corr()
+        self.corr_mat = self.df[["Ankle-Wrist", "Wrist-HR", "Wrist-HRAcc",
+                                 "Ankle-HR", "Ankle-HRAcc", "HR-HRAcc"]].corr()
 
         self.descriptive_stats_kappa = self.df.describe().loc[["mean", "std"]].iloc[:, 1:].transpose()
         self.descriptive_stats_kappa.columns = ["Kappa_mean", "Kappa_sd"]
@@ -70,6 +74,18 @@ class Objective2:
                                                 within='variable', data=df,
                                                 padjust="holm", effsize="hedges", parametric=True)
 
+    def calculate_cis(self):
+
+        cis = []
+        model_list = ["Wrist-HR", "Ankle-HR", "Wrist-HRAcc", "Ankle-Wrist", "Ankle-HRAcc", "HR-HRAcc"]
+        for model in model_list:
+            ci_range = sms.DescrStatsW(self.df[model]).tconfint_mean()
+            ci_width = (ci_range[1] - ci_range[0]) / 2
+            cis.append(ci_width)
+
+        self.kappa_cis = pd.DataFrame(list(zip(model_list, cis)))
+        self.kappa_cis.columns = ["Comparison", "95%CI Width"]
+
     def plot_boxplot(self):
 
         df = self.df.copy()
@@ -92,5 +108,3 @@ class Objective2:
 
 x = Objective2(data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Activity and Kappa Data/'
                          '3b_Kappa_RepeatedParticipantsOnly.xlsx')
-
-x.plot_boxplot()

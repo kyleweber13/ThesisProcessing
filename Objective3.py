@@ -7,6 +7,7 @@ import os
 import seaborn as sns
 import researchpy as rp
 import pingouin as pg
+import statsmodels.stats.api as sms
 
 usable_subjs = LocateUsableParticipants.SubjectSubset(check_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/"
                                                                  "OND07_ProcessingStatus.xlsx",
@@ -41,6 +42,8 @@ class Objective3:
         self.posthoc_para = None
         self.posthoc_nonpara = None
         self.kappa_posthoc = None
+        self.df_kappa_ci = None
+        self.df_ci = None
 
         """RUNS METHODS"""
         self.load_data()
@@ -164,6 +167,34 @@ class Objective3:
             by_group.boxplot(column=["Sedentary%", "Light%", "Moderate%", "Vigorous%"])
             by_model.boxplot(column=["Sedentary%", "Light%", "Moderate%", "Vigorous%"])
 
+    def calculate_cis(self):
+
+        cis = []
+        for column in [3, 4, 7]:
+            data = self.df_percent[["ID", "Group", "Model", self.df_percent.keys()[column]]]
+
+            for model in ["Ankle", "HR", "HR-Acc", "Wrist"]:
+                ci_range = sms.DescrStatsW(data.groupby(["Group", "Model"]).
+                                           get_group(("HIGH", model))[x.df_percent.keys()[column]]).tconfint_mean()
+                ci_width_h = (ci_range[1] - ci_range[0]) / 2
+
+                ci_range = sms.DescrStatsW(data.groupby(["Group", "Model"]).
+                                           get_group(("LOW", model))[x.df_percent.keys()[column]]).tconfint_mean()
+                ci_width_l = (ci_range[1] - ci_range[0]) / 2
+
+                print("{} - {}: HIGH = {}; LOW = {}".format(model, x.df_percent.keys()[column],
+                                                            round(ci_width_h, 5), round(ci_width_l, 5)))
+
+                cis.append(ci_width_h)
+                cis.append(ci_width_l)
+        output = np.array(cis).reshape(3, 8)
+
+        self.df_ci = pd.DataFrame(output).transpose()
+        self.df_ci.columns = ["Sedentary", "Light", "MVPA"]
+        self.df_ci.insert(loc=0, column="Group", value=["HIGH", "LOW", "HIGH", "LOW", "HIGH", "LOW", "HIGH", "LOW"])
+        self.df_ci.insert(loc=0, column="Model", value=["Ankle", "Ankle", "HR", "HR",
+                                                        "HR-Acc", "HR-Acc", "Wrist", "Wrist"])
+
     def perform_activity_anova(self, activity_intensity, data_type="percent"):
 
         if data_type == "percent":
@@ -195,7 +226,7 @@ class Objective3:
 
         # Group x Intensity mixed ANOVA
         self.aov = pg.mixed_anova(dv=activity_intensity, within="Model", between="Group", subject="ID", data=df,
-                                  correction=True)
+                                  correction='auto')
         pg.print_table(self.aov)
 
         group_p = self.aov.loc[self.aov["Source"] == "Group"]["p-unc"]
@@ -245,8 +276,8 @@ class Objective3:
         plt.suptitle("{} Activity".format(intensity.capitalize()))
 
         plt.subplot(1, 3, 1)
-        model_means = rp.summary_cont(self.df_percent.groupby(['Model']))[intensity.capitalize()]["Mean"]
-        model_sd = rp.summary_cont(self.df_percent.groupby(['Model']))[intensity.capitalize()]["SD"]
+        model_means = rp.summary_cont(self.df_percent.groupby(['Model']))[intensity]["Mean"]
+        model_sd = rp.summary_cont(self.df_percent.groupby(['Model']))[intensity]["SD"]
         plt.bar([i for i in model_sd.index], [100 * i for i in model_means.values],
                 yerr=[i * 100 for i in model_sd], capsize=10, ecolor='black',
                 color=["Red", "Blue", "Green", "Purple"], edgecolor='black', linewidth=2)
@@ -254,15 +285,15 @@ class Objective3:
         plt.title("Model Means")
 
         plt.subplot(1, 3, 2)
-        group_means = rp.summary_cont(self.df_percent.groupby(['Group']))[intensity.capitalize()]["Mean"]
-        group_sd = rp.summary_cont(self.df_percent.groupby(['Group']))[intensity.capitalize()]["SD"]
+        group_means = rp.summary_cont(self.df_percent.groupby(['Group']))[intensity]["Mean"]
+        group_sd = rp.summary_cont(self.df_percent.groupby(['Group']))[intensity]["SD"]
         plt.bar([i for i in group_means.index], [100 * i for i in group_means.values],
                 yerr=[i * 100 for i in group_sd], capsize=10, ecolor='black',
                 color=["Grey", "White"], edgecolor='black', linewidth=2)
         plt.title("Group Means")
 
         plt.subplot(1, 3, 3)
-        sns.pointplot(data=x.df_percent, x="Model", y=intensity.capitalize(), hue="Group",
+        sns.pointplot(data=x.df_percent, x="Model", y=intensity, hue="Group",
                       dodge=True, markers='o', capsize=.1, errwidth=1, palette='Set1')
         plt.title("All Combination Means")
         plt.ylabel(" ")
@@ -326,6 +357,30 @@ class Objective3:
                                                 data=self.df_kappa_long,
                                                 padjust="bonf", effsize="cohen", parametric=True)
 
+    def calculate_kappa_cis(self):
+
+        high_cis = []
+        low_cis = []
+        for column in range(2, 8):
+            data = self.df_kappa[["ID", "Group", self.df_kappa.keys()[column]]]
+
+            ci_range = sms.DescrStatsW(data.groupby("Group").
+                                       get_group("HIGH")[self.df_kappa.keys()[column]]).tconfint_mean()
+            ci_width_h = (ci_range[1] - ci_range[0]) / 2
+
+            ci_range = sms.DescrStatsW(data.groupby("Group").
+                                       get_group("LOW")[self.df_kappa.keys()[column]]).tconfint_mean()
+            ci_width_l = (ci_range[1] - ci_range[0]) / 2
+
+            print("{}: HIGH = {}; LOW = {}".format(data.keys()[2], round(ci_width_h, 5), round(ci_width_l, 5)))
+
+            high_cis.append(ci_width_h)
+            low_cis.append(ci_width_l)
+
+        self.df_kappa_ci = pd.DataFrame(list(zip(high_cis, low_cis))).transpose()
+        self.df_kappa_ci.columns = x.df_kappa.keys()[2:]
+        self.df_kappa_ci.insert(loc=0, column="Group", value=["HIGH", "LOW"])
+
     def plot_mains_effects_kappa(self):
 
         n_per_group = int(len(set(self.df_kappa_long["ID"])) / len(set(self.df_kappa_long["Group"])))
@@ -371,13 +426,14 @@ class Objective3:
         plt.xlabel("Activity Level")
 
 
-x = Objective3(activity_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/'
-                                  'Activity and Kappa Data/ActivityGroupsData_AllActivityMinutes.xlsx',
-               kappa_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/'
-                               'Activity and Kappa Data/Kappa - RepeatedOnly.xlsx')
+x = Objective3(activity_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Activity and Kappa Data/'
+                                  '3a_Activity_RepeteadOnlyActivityMinutes.xlsx',
+               kappa_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Activity and Kappa Data/'
+                               '3b_Kappa_RepeatedParticipantsOnly.xlsx')
+
 # x.check_kappa_assumptions(False)
-x.perform_kappa_anova()
-# x.perform_activity_anova("Vigorous")
+# x.perform_kappa_anova()
+# x.perform_activity_anova("Sedentary")
 
 
 class KappaMethod:
