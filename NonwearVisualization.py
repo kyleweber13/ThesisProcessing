@@ -112,3 +112,54 @@ x = Data(accel_filepath="/Users/kyleweber/Desktop/Test4_Accelerometer.EDF",
          temperature_filepath="/Users/kyleweber/Desktop/Test4_Temperature.EDF",
          log_filepath="/Users/kyleweber/Desktop/Test4.xlsx")
 """
+
+
+class NonWear:
+
+    def __init__(self, file):
+
+        self.data = pd.read_excel(file)
+
+        self.calculate_durations()
+        self.create_histogram()
+
+    def calculate_durations(self):
+
+        durations = []
+
+        for nw_period in range(self.data.shape[0]):
+
+            on_stamp = datetime.strptime(self.data.iloc[nw_period]["DEVICE ON"], "%Y%b%d %H:%M")
+            off_stamp = datetime.strptime(self.data.iloc[nw_period]["DEVICE OFF"], "%Y%b%d %H:%M")
+
+            dur = on_stamp - off_stamp
+
+            durations.append(dur)
+
+        self.data.insert(3, "DURATION", durations)
+
+    def create_histogram(self):
+
+        durations = [self.data["DURATION"][i].seconds / 60 + self.data["DURATION"][i].days / (24 * 60)
+                     for i in range(self.data.shape[0])]
+
+        plt.subplots(1, 2)
+
+        plt.subplot(1, 2, 1)
+        plt.hist(durations, bins=np.arange(0, max(durations), 15),
+                 weights=100*np.ones(len(durations)) / len(durations),
+                 color='grey', edgecolor='black')
+        plt.ylabel("% Periods")
+        plt.xlabel("Minutes")
+        plt.title("Non-Cumulative Histogram")
+
+        plt.subplot(1, 2, 2)
+        plt.hist(durations, bins=np.arange(0, max(durations), 10), cumulative=True,
+                 weights=100*np.ones(len(durations)) / len(durations),
+                 color='grey', edgecolor='black')
+        plt.ylabel(" ")
+        plt.xlabel("Minutes")
+        plt.title("Cumulative Histogram")
+
+
+# x = NonWear("/Users/kyleweber/Desktop/Data/OND07/Tabular Data/NonwearLog.xlsx")
