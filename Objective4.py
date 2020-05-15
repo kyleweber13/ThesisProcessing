@@ -9,14 +9,14 @@ import researchpy as rp
 import pingouin as pg
 import statsmodels.stats.api as sms
 
-"""usable_subjs = LocateUsableParticipants.SubjectSubset(check_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/"
+usable_subjs = LocateUsableParticipants.SubjectSubset(check_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/"
                                                                  "OND07_ProcessingStatus.xlsx",
                                                       wrist_ankle=False, wrist_hr=False,
                                                       wrist_hracc=False, hr_hracc=False,
                                                       ankle_hr=False, ankle_hracc=False,
                                                       wrist_only=False, ankle_only=False,
                                                       hr_only=False, hracc_only=False,
-                                                      require_treadmill=True, require_all=True)"""
+                                                      require_treadmill=True, require_all=True)
 
 
 class Objective4:
@@ -48,9 +48,13 @@ class Objective4:
         self.anova_results = None
         self.posthoc_results = None
 
+        self.df_ci = None
+        self.df_kappa_ci = None
+
         """RUNS METHODS"""
         self.load_data()
-        self.check_assumptions()
+        self.calculate_cis()
+        self.calculate_kappa_cis()
 
     def load_data(self):
 
@@ -95,8 +99,7 @@ class Objective4:
 
         group_d = pd.concat([group_d, comp_d])
 
-        self.descriptive_stats_kappa = pd.DataFrame(list(zip(["HIGH", "LOW", "Ankle-HR", "Ankle-HRAcc", "Ankle-Wrist",
-                                                              "HR-HRAcc", "Wrist-HR", "Wrist-HRAcc"],
+        self.descriptive_stats_kappa = pd.DataFrame(list(zip(["HIGH", "LOW", "Between-Model"],
                                                              group_d["Kappa"]["mean"], group_d["Kappa"]["std"])),
                                                     columns=["IV", "Kappa_mean", "Kappa_sd"])
 
@@ -170,7 +173,7 @@ class Objective4:
         plt.title("Group x Model Mixed ANOVA: {} Activity".format(activity_intensity))
 
         # Two activity level groups: one line for each intensity
-        sns.pointplot(data=df, x="Group", y=activity_intensity, hue="Model",
+        sns.pointplot(data=df, x="Group", y=activity_intensity, hue="Model", ci=95,
                       dodge=False, markers='o', capsize=.1, errwidth=1, palette='Set1')
         plt.ylabel("{}".format(data_type.capitalize()))
 
@@ -218,7 +221,7 @@ class Objective4:
         self.posthoc_nonpara = posthoc_nonpara
 
         pg.print_table(posthoc_para)
-        pg.print_table(posthoc_nonpara)
+        # pg.print_table(posthoc_nonpara)
 
     def plot_main_effects(self, intensity):
 
@@ -226,18 +229,26 @@ class Objective4:
             intensity += "%"
 
         plt.subplots(3, 1, figsize=(12, 7))
-        plt.suptitle("{} Activity".format(intensity.capitalize()))
+        plt.suptitle("{} Activity (±95%CI)".format(intensity.capitalize()))
 
+        # MODEL MEANS -------------------------------------------------------------------------------------------------
         plt.subplot(1, 3, 1)
+
+        # n - 1
+        t_crit = scipy.stats.t.ppf(.95, int(len(set(self.df_percent["ID"])) - 1))
+
         model_means = rp.summary_cont(self.df_percent.groupby(['Model']))[intensity]["Mean"]
-        model_sd = rp.summary_cont(self.df_percent.groupby(['Model']))[intensity]["SD"]
-        plt.bar([i for i in model_sd.index], [100 * i for i in model_means.values],
-                yerr=[i * 100 for i in model_sd], capsize=10, ecolor='black',
+        model_ci = rp.summary_cont(self.df_percent.groupby(['Model']))[intensity]["SE"] * t_crit
+
+        plt.bar([i for i in model_means.index], [100 * i for i in model_means.values],
+                yerr=[i * 100 for i in model_ci], capsize=10, ecolor='black',
                 color=["Red", "Blue", "Green", "Purple"], edgecolor='black', linewidth=2)
         plt.ylabel("% of Collection")
         plt.title("Model Means")
 
+        # ACTIVITY GROUPS ---------------------------------------------------------------------------------------------
         plt.subplot(1, 3, 2)
+
         group_means = rp.summary_cont(self.df_percent.groupby(['Group']))[intensity]["Mean"]
         group_sd = rp.summary_cont(self.df_percent.groupby(['Group']))[intensity]["SD"]
         plt.bar([i for i in group_means.index], [100 * i for i in group_means.values],
@@ -246,10 +257,90 @@ class Objective4:
         plt.title("Group Means")
 
         plt.subplot(1, 3, 3)
-        sns.pointplot(data=x.df_percent, x="Model", y=intensity, hue="Group",
+        sns.pointplot(data=self.df_percent, x="Model", y=intensity, hue="Group",
                       dodge=True, markers='o', capsize=.1, errwidth=1, palette='Set1')
         plt.title("All Combination Means")
         plt.ylabel(" ")
+
+    def plot_interaction(self):
+
+        # Creates DF with values as % of 100 instead of decimal
+        temp_df = self.df_percent.copy()
+        temp_df = temp_df.iloc[:, 3:]*100
+        temp_df["ID"] = self.df_percent["ID"]
+        temp_df["Group"] = self.df_percent["Group"]
+        temp_df["Model"] = self.df_percent["Model"]
+
+        sample_name = [i for i in set(self.df_percent["Model"])]
+        sample_name = sample_name[0] + "-" + sample_name[1]
+
+        plt.subplots(3, 1)
+        plt.suptitle("{} Sample: Total Activity by Activity Group (n={}/group)".format(sample_name,
+                                                                                       int(self.df_percent.shape[0]/4)))
+
+        plt.subplot(1, 3, 1)
+        sns.pointplot(data=temp_df, x="Model", y="Sedentary%", hue="Group", ci=95,
+                      dodge=False, capsize=.1, errwidth=1, palette='Set1')
+        plt.title("Sedentary")
+        plt.ylabel("% of Valid Data")
+        plt.ylim(0, 100)
+        plt.xlabel(" ")
+
+        plt.subplot(1, 3, 2)
+        sns.pointplot(data=temp_df, x="Model", y="Light%", hue="Group", ci=95,
+                      dodge=False, capsize=.1, errwidth=1, palette='Set1')
+        plt.title("Light Activity")
+        plt.ylabel(" ")
+        plt.xlabel(" ")
+        plt.ylim(0, 15)
+
+        plt.subplot(1, 3, 3)
+        sns.pointplot(data=temp_df, x="Model", y="MVPA%", hue="Group", ci=95,
+                      dodge=False, capsize=.1, errwidth=1, palette='Set1')
+        plt.title("MVPA")
+        plt.ylabel(" ")
+        plt.xlabel(" ")
+        plt.ylim(0, 15)
+
+    def plot_interaction2(self):
+
+        # Creates DF with values as % of 100 instead of decimal
+        temp_df = self.df_percent.copy()
+        temp_df = temp_df.iloc[:, 3:]*100
+        temp_df["ID"] = self.df_percent["ID"]
+        temp_df["Group"] = self.df_percent["Group"]
+        temp_df["Model"] = self.df_percent["Model"]
+
+        sample_name = [i for i in set(self.df_percent["Model"])]
+        sample_name = sample_name[0] + "-" + sample_name[1]
+
+        plt.subplots(3, 1)
+        plt.suptitle("{} Sample: Total Activity by Activity Group (n={}/group)".format(sample_name,
+                                                                                       int(self.df_percent.shape[0]/4)))
+
+        plt.subplot(1, 3, 1)
+        sns.pointplot(data=temp_df, x="Group", y="Sedentary%", hue="Model", order=["LOW", "HIGH"], ci=95,
+                      dodge=False, capsize=.1, errwidth=1, palette='Set1')
+        plt.title("Sedentary")
+        plt.ylabel("% of Valid Data")
+        plt.ylim(0, 100)
+        plt.xlabel(" ")
+
+        plt.subplot(1, 3, 2)
+        sns.pointplot(data=temp_df, x="Group", y="Light%", hue="Model", order=["LOW", "HIGH"], ci=95,
+                      dodge=False, capsize=.1, errwidth=1, palette='Set1')
+        plt.title("Light Activity")
+        plt.ylabel(" ")
+        plt.xlabel(" ")
+        plt.ylim(0, 15)
+
+        plt.subplot(1, 3, 3)
+        sns.pointplot(data=temp_df, x="Group", y="MVPA%", hue="Model", order=["LOW", "HIGH"], ci=95,
+                      dodge=False, capsize=.1, errwidth=1, palette="Set1")
+        plt.title("MVPA")
+        plt.ylabel(" ")
+        plt.xlabel(" ")
+        plt.ylim(0, 15)
 
     def check_kappa_assumptions(self, show_plots=False):
         """Runs Shapiro-Wilk and Levene's test for each group x model combination and prints results.
@@ -283,20 +374,50 @@ class Objective4:
         self.kappa_wilcoxon = pg.wilcoxon(high, low)
         print(self.kappa_wilcoxon)
 
-    def plot_mains_effects_kappa(self):
+    def calculate_cis(self):
+
+        cis = []
+        for column in [3, 4, 7]:
+            data = self.df_percent[["ID", "Group", "Model", self.df_percent.keys()[column]]]
+
+            for model in [i for i in set(self.df_percent["Model"])]:
+                ci_range = sms.DescrStatsW(data.groupby(["Group", "Model"]).
+                                           get_group(("HIGH", model))[self.df_percent.keys()[column]]).tconfint_mean()
+                ci_width_h = (ci_range[1] - ci_range[0]) / 2
+
+                ci_range = sms.DescrStatsW(data.groupby(["Group", "Model"]).
+                                           get_group(("LOW", model))[self.df_percent.keys()[column]]).tconfint_mean()
+                ci_width_l = (ci_range[1] - ci_range[0]) / 2
+
+                cis.append(ci_width_h)
+                cis.append(ci_width_l)
+
+        output = np.array(cis).reshape(3, 4)
+
+        self.df_ci = pd.DataFrame(output).transpose()
+        self.df_ci.columns = ["Sedentary", "Light", "MVPA"]
+        self.df_ci.insert(loc=0, column="Group", value=["HIGH", "LOW", "HIGH", "LOW"])
+
+        models = [i for i in set(self.df_percent["Model"])]
+
+        self.df_ci.insert(loc=0, column="Model", value=[models[0], models[0], models[1], models[1]])
+
+    def plot_mains_effects_kappa(self, error_bars="95%CI"):
+
+        if error_bars == "95%CI":
+            e_bars = self.df_kappa_ci
+        if error_bars == "SD":
+            e_bars = rp.summary_cont(self.df_kappa_long.groupby(['Group']))["Kappa"]["SD"]
 
         group_means = rp.summary_cont(self.df_kappa_long.groupby(['Group']))["Kappa"]["Mean"]
-        group_sd = rp.summary_cont(self.df_kappa_long.groupby(['Group']))["Kappa"]["SD"]
 
-        plt.bar([i for i in group_sd.index], [i for i in group_means.values],
-                yerr=[i for i in group_sd], capsize=10, ecolor='black',
-                color=["lightgrey", "dimgrey"], alpha=0.5, edgecolor='black', linewidth=2)
-        plt.title("Activity Group Comparison: t = {}, p = {}".format(self.kappa_ttest["T"][0],
-                                                                     round(self.kappa_ttest["p-val"][0], 3)))
+        plt.bar([i for i in group_means.index], [i for i in group_means.values],
+                yerr=[i for i in e_bars], capsize=8, ecolor='black',
+                color=["lightgrey", "dimgrey"], edgecolor='black', alpha=0.5, linewidth=2)
+        plt.title("Cohen's Kappa by Activity Group")
 
         plt.ylabel("Kappa")
         plt.yticks(np.arange(0, 1.1, 0.1))
-        plt.xticks(fontsize=8, rotation=45)
         plt.yticks(fontsize=10)
 
     def create_output_files(self, write_files=True):
@@ -459,26 +580,39 @@ class Objective4:
         ci_range_low = sms.DescrStatsW(self.df_kappa.groupby("Group").get_group("LOW")["Kappa"]).tconfint_mean()
         ci_width_low = (ci_range_low[1] - ci_range_low[0]) / 2
 
-        ci_range_all = sms.DescrStatsW(self.df_kappa["Kappa"]).tconfint_mean()
-        ci_width_all = (ci_range_all[1] - ci_range_all[0]) / 2
-
-        print("\nKappa 95%CI width (HIGH, LOW, ALL) = {}, {}, {}".format(round(ci_width_high, 5),
-                                                                         round(ci_width_low, 5),
-                                                                         round(ci_width_all, 5)))
+        self.df_kappa_ci = [ci_width_high, ci_width_low]
 
 
-x = Objective4(activity_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Activity and Kappa Data/'
-                                  '4a_Activity_AnkleWrist_ByAnkle.xlsx',
-               kappa_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Activity and Kappa Data/'
-                               '4b_Kappa_AnkleWrist_ByAnkle.xlsx')
+anklewrist = Objective4(activity_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Activity and Kappa Data/'
+                                           '4a_Activity_AnkleWrist_ByAnkle.xlsx',
+                        kappa_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Activity and Kappa Data/'
+                                        '4b_Kappa_AnkleWrist_ByAnkle.xlsx')
 
-# x.check_kappa_assumptions(False)
-# x.perform_kappa_ttest()
-# x.check_assumptions(True)
-# x.perform_activity_anova(activity_intensity="MVPA", data_type="percent")
-# x.create_output_files(write_files=True)
-# x.df_percent.groupby(["Model", "Group"]).mean()
-# x.df_percent.groupby(["Model", "Group"]).sem().to_excel("/Users/kyleweber/Desktop/Out.xlsx")
+wristhr = Objective4(activity_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Activity and Kappa Data/'
+                                         '4a_Activity_WristHR_ByAnkle_All.xlsx',
+                      kappa_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Activity and Kappa Data/'
+                                      '4b_Kappa_WristHR_ByAnkle_All.xlsx')
 
-ci_range = sms.DescrStatsW(x.df_kappa.groupby("Group").get_group("HIGH")["Kappa"]).tconfint_mean()
-ci_width = (ci_range[1] - ci_range[0]) / 2
+# anklewrist.plot_interaction2()
+# wristhhr.plot_interaction2()
+
+anklewrist.plot_main_effects("MVPA")
+
+
+def plot_both_samples_kappa():
+
+    plt.subplots(1, 2)
+
+    plt.subplot(1, 2, 1)
+    anklewrist.plot_mains_effects_kappa()
+    plt.title("Ankle-Wrist Sample (n={}/group)".format(int(anklewrist.df_kappa.shape[0]/2)))
+
+    plt.subplot(1, 2, 2)
+    wristhr.plot_mains_effects_kappa()
+    plt.title("Wrist-HR Sample (n={}/group)".format(int(wristhr.df_kappa.shape[0]/2)))
+    plt.ylabel(" ")
+
+    plt.suptitle("Cohen's Kappa by Activity Group (Mean ± 95%CI)")
+
+
+# plot_both_samples_kappa()

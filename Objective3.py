@@ -48,6 +48,8 @@ class Objective3:
         """RUNS METHODS"""
         self.load_data()
         # self.check_assumptions()
+        self.calculate_cis()
+        self.calculate_kappa_cis()
 
     def load_data(self):
 
@@ -175,14 +177,14 @@ class Objective3:
 
             for model in ["Ankle", "HR", "HR-Acc", "Wrist"]:
                 ci_range = sms.DescrStatsW(data.groupby(["Group", "Model"]).
-                                           get_group(("HIGH", model))[x.df_percent.keys()[column]]).tconfint_mean()
+                                           get_group(("HIGH", model))[self.df_percent.keys()[column]]).tconfint_mean()
                 ci_width_h = (ci_range[1] - ci_range[0]) / 2
 
                 ci_range = sms.DescrStatsW(data.groupby(["Group", "Model"]).
-                                           get_group(("LOW", model))[x.df_percent.keys()[column]]).tconfint_mean()
+                                           get_group(("LOW", model))[self.df_percent.keys()[column]]).tconfint_mean()
                 ci_width_l = (ci_range[1] - ci_range[0]) / 2
 
-                print("{} - {}: HIGH = {}; LOW = {}".format(model, x.df_percent.keys()[column],
+                print("{} - {}: HIGH = {}; LOW = {}".format(model, self.df_percent.keys()[column],
                                                             round(ci_width_h, 5), round(ci_width_l, 5)))
 
                 cis.append(ci_width_h)
@@ -298,6 +300,44 @@ class Objective3:
         plt.title("All Combination Means")
         plt.ylabel(" ")
 
+    def plot_interaction(self):
+
+        # Creates DF with values as % of 100 instead of decimal
+        temp_df = self.df_percent.copy()
+        temp_df = temp_df.iloc[:, 3:]*100
+        temp_df["ID"] = self.df_percent["ID"]
+        temp_df["Group"] = self.df_percent["Group"]
+        temp_df["Model"] = self.df_percent["Model"]
+
+        plt.subplots(3, 1)
+        plt.suptitle("Total Activity by Activity Group (n={}/group)".format(int(self.df_percent.shape[0]/8)))
+
+        plt.subplot(1, 3, 1)
+        sns.pointplot(data=temp_df, x="Group", y="Sedentary%", hue="Model", order=["LOW", "HIGH"], ci=95,
+                      dodge=True, capsize=.1, errwidth=1, palette='Set1', scale=.8, markers=".")
+        plt.title("Sedentary")
+        plt.ylabel("% of Valid Data")
+        plt.ylim(0, 100)
+        plt.xlabel(" ")
+
+        plt.subplot(1, 3, 2)
+        ax = sns.pointplot(data=temp_df, x="Group", y="Light%", hue="Model", order=["LOW", "HIGH"], ci=95,
+                           dodge=True, capsize=.1, errwidth=1, palette='Set1', scale=.8, markers=".")
+        plt.title("Light Activity")
+        plt.ylabel(" ")
+        plt.xlabel(" ")
+        plt.ylim(0, 24)
+        ax.legend_.remove()
+
+        plt.subplot(1, 3, 3)
+        ax = sns.pointplot(data=temp_df, x="Group", y="MVPA%", hue="Model", order=["LOW", "HIGH"], ci=95,
+                           dodge=True, capsize=.1, errwidth=1, palette="Set1", scale=.8, markers=".")
+        plt.title("MVPA")
+        plt.ylabel(" ")
+        plt.xlabel(" ")
+        plt.ylim(0, 15)
+        ax.legend_.remove()
+
     def check_kappa_assumptions(self, show_plots=False):
         """Runs Shapiro-Wilk and Levene's test for each group x model combination and prints results.
            Shows boxplots sorted by group and model"""
@@ -378,10 +418,10 @@ class Objective3:
             low_cis.append(ci_width_l)
 
         self.df_kappa_ci = pd.DataFrame(list(zip(high_cis, low_cis))).transpose()
-        self.df_kappa_ci.columns = x.df_kappa.keys()[2:]
+        self.df_kappa_ci.columns = self.df_kappa.keys()[2:]
         self.df_kappa_ci.insert(loc=0, column="Group", value=["HIGH", "LOW"])
 
-    def plot_mains_effects_kappa(self):
+    def plot_main_effects_kappa(self):
 
         n_per_group = int(len(set(self.df_kappa_long["ID"])) / len(set(self.df_kappa_long["Group"])))
 
@@ -389,26 +429,44 @@ class Objective3:
         plt.suptitle("Cohen's Kappas (mean ± SD; n/group={})".format(n_per_group))
         plt.subplots_adjust(wspace=0.25)
 
+        # COMPARISON MEANS --------------------------------------------------------------------------------------------
         plt.subplot(1, 3, 1)
         comp_means = rp.summary_cont(self.df_kappa_long.groupby(['Comparison']))["Kappa"]["Mean"]
-        comp_sd = rp.summary_cont(self.df_kappa_long.groupby(['Comparison']))["Kappa"]["SD"]
+
+        # DF = n - 1
+        t_crit = scipy.stats.t.ppf(.95, self.df_kappa.shape[0] - 1)
+
+        comp_ci = rp.summary_cont(self.df_kappa_long.groupby(['Comparison']))["Kappa"]["SD"] / \
+                  (self.df_kappa.shape[0] ** .5) * t_crit
 
         plt.bar([i for i in comp_means.index], [i for i in comp_means.values],
-                yerr=[i for i in comp_sd], capsize=8, ecolor='black',
+                yerr=[i for i in comp_ci], capsize=8, ecolor='black',
                 color=['purple', 'orange', 'red', 'yellow', 'blue', 'green'], edgecolor='black', linewidth=2)
-        plt.ylabel("Kappa")
+
+        plt.ylabel("Cohen's Kappa")
         plt.title("Model Comparison")
         plt.yticks(np.arange(0, 1.1, 0.1))
         plt.xticks(fontsize=8, rotation=45)
         plt.yticks(fontsize=10)
 
+        # GROUP MEANS -------------------------------------------------------------------------------------------------
         plt.subplot(1, 3, 2)
         group_means = rp.summary_cont(self.df_kappa_long.groupby(['Group']))["Kappa"]["Mean"]
-        group_sd = rp.summary_cont(self.df_kappa_long.groupby(['Group']))["Kappa"]["SD"]
 
-        plt.bar([i for i in group_sd.index], [i for i in group_means.values],
-                yerr=[i for i in group_sd], capsize=10, ecolor='black',
+        # DF = n_per_group * n_comparisons - 1
+        t_crit = scipy.stats.t.ppf(.95, n_per_group * (self.df_kappa.shape[1] - 2) - 1)
+
+        # SEM calculated as SD / root(n_per_group * n_comparisons)
+        group_ci = rp.summary_cont(self.df_kappa_long.groupby(['Group']))["Kappa"]["SD"] / \
+                   ((n_per_group * (self.df_kappa.shape[1] - 2)) ** .5) * t_crit
+
+        # Adds group CIs to df_kappa_ci
+        self.df_kappa_ci["ALL"] = list(group_ci)
+
+        plt.bar([i for i in group_means.index], [i for i in group_means.values],
+                yerr=[i for i in group_ci], capsize=10, ecolor='black',
                 color=["lightgrey", "dimgrey"], alpha=0.5, edgecolor='black', linewidth=2)
+
         plt.title("Activity Group")
         plt.xlabel("Activity Level")
         plt.yticks(np.arange(0, 1.1, 0.1))
@@ -416,7 +474,7 @@ class Objective3:
         plt.yticks(fontsize=10)
 
         plt.subplot(1, 3, 3)
-        sns.pointplot(data=self.df_kappa_long, x="Group", y="Kappa", hue="Comparison",
+        sns.pointplot(data=self.df_kappa_long, x="Group", y="Kappa", hue="Comparison", ci=95,
                       dodge=False, markers='o', capsize=.1, errwidth=1, palette='Set1')
         plt.title("Interaction")
         plt.xticks(fontsize=8, rotation=45)
@@ -425,15 +483,49 @@ class Objective3:
         plt.ylabel(" ")
         plt.xlabel("Activity Level")
 
+    def plot_kappa_interaction(self):
+
+        sns.pointplot(data=self.df_kappa_long, x="Group", y="Kappa", hue="Comparison", ci=95,
+                      dodge=False, markers='o', capsize=.1, errwidth=1, palette='Set1')
+
+        plt.title("Interaction")
+        plt.xticks(fontsize=10, rotation=45)
+        plt.yticks(np.arange(0, 1.1, 0.1))
+        plt.yticks(fontsize=10)
+        plt.ylabel("Cohen's Kappa")
+        plt.xlabel("Activity Level")
+        plt.legend(loc='lower left', fontsize=10)
+
+    def plot_activity_group_means(self, error_bars="95%CI"):
+
+        if error_bars == "95%CI":
+            ci_range = sms.DescrStatsW(self.df_kappa_long.groupby("Group").get_group("HIGH")["Kappa"]).tconfint_mean()
+            ci_width_h = (ci_range[1] - ci_range[0]) / 2
+
+            ci_range = sms.DescrStatsW(self.df_kappa_long.groupby("Group").get_group("LOW")["Kappa"]).tconfint_mean()
+            ci_width_l = (ci_range[1] - ci_range[0]) / 2
+
+            e_bars = [ci_width_h, ci_width_l]
+
+        if error_bars == "SD":
+            e_bars = rp.summary_cont(self.df_kappa_long.groupby(['Group']))["Kappa"]["SD"]
+
+        group_means = rp.summary_cont(self.df_kappa_long.groupby(['Group']))["Kappa"]["Mean"]
+
+        plt.bar([i for i in group_means.index], [i for i in group_means.values],
+                yerr=[i for i in e_bars], capsize=8, ecolor='black',
+                color=["white", "dimgrey"], edgecolor='black', alpha=0.5, linewidth=2)
+        plt.title("Cohen's Kappa by Activity Group")
+
+        plt.ylabel("Cohen's Kappa")
+        plt.yticks(np.arange(0, 1.1, 0.1))
+        plt.yticks(fontsize=10)
+
 
 x = Objective3(activity_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Activity and Kappa Data/'
                                   '3a_Activity_RepeteadOnlyActivityMinutes.xlsx',
                kappa_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Activity and Kappa Data/'
                                '3b_Kappa_RepeatedParticipantsOnly.xlsx')
-
-# x.check_kappa_assumptions(False)
-# x.perform_kappa_anova()
-# x.perform_activity_anova("Sedentary")
 
 
 class KappaMethod:

@@ -39,7 +39,6 @@ class Objective1:
         """RUNS METHODS"""
         self.load_data()
         self.calculate_cis()
-        self.perform_anova(intensity=self.intensity)
 
     def load_data(self):
 
@@ -116,72 +115,43 @@ class Objective1:
                                           padjust="bonf", effsize="hedges", parametric=True)
         print(self.posthoc)
 
-    def plot_main_effects(self):
+    def plot_main_effects(self, error_bars="95% Conf."):
 
-        plt.subplots(2, 3, figsize=(10, 6))
+        plt.subplots(1, 3, figsize=(10, 6))
         plt.subplots_adjust(hspace=.3, wspace=0.25)
 
-        plt.suptitle("Activity Totals by Model (Mean ± SD)")
+        plt.suptitle("Activity Totals by Model (Mean ± {}) [n={}]".format(error_bars, len(set(self.df_percent["ID"]))))
 
         # SEDENTARY
-        plt.subplot(2, 3, 1)
-        model_means = rp.summary_cont(self.df_percent.groupby(['Model']))["Sedentary%"]["Mean"]
-        model_sd = rp.summary_cont(self.df_percent.groupby(['Model']))["Sedentary%"]["SD"]
-        plt.bar([i for i in model_sd.index], [100 * i for i in model_means.values],
-                yerr=[i * 100 for i in model_sd], capsize=10, ecolor='black',
-                color=["Red", "Blue", "Green", "Purple"], edgecolor='black', linewidth=2)
-        plt.ylabel("% of Collection")
+        plt.subplot(1, 3, 1)
+        model_means = self.descriptive_stats["Sedentary%"]
+        model_ci = self.df_ci["Sedentary"]
+        plt.bar([i for i in model_means.index], [100 * i for i in model_means.values],
+                yerr=[i * 100 for i in model_ci], capsize=8, ecolor='black',
+                color=["White", "silver", "grey", "#404042"], edgecolor='black', linewidth=2)
+        plt.ylabel("% of Valid Data")
         plt.title("Sedentary")
+        plt.yticks(np.arange(0, 120, 20))
 
         # LIGHT
-        plt.subplot(2, 3, 2)
-        model_means = rp.summary_cont(self.df_percent.groupby(['Model']))["Light%"]["Mean"]
-        model_sd = rp.summary_cont(self.df_percent.groupby(['Model']))["Light%"]["SD"]
-        plt.bar([i for i in model_sd.index], [100 * i for i in model_means.values],
-                yerr=[i * 100 for i in model_sd], capsize=10, ecolor='black',
-                color=["Red", "Blue", "Green", "Purple"], edgecolor='black', linewidth=2)
+        plt.subplot(1, 3, 2)
+        model_means = self.descriptive_stats["Light%"]
+        model_ci = self.df_ci["Light"]
+        plt.bar([i for i in model_means.index], [100 * i for i in model_means.values],
+                yerr=[i * 100 for i in model_ci], capsize=8, ecolor='black',
+                color=["White", "silver", "grey", "#404042"], edgecolor='black', linewidth=2)
         plt.ylabel(" ")
-        plt.title("Light")
-
-        # MODERATE
-        plt.subplot(2, 3, 3)
-        model_means = rp.summary_cont(self.df_percent.groupby(['Model']))["Moderate%"]["Mean"]
-        model_sd = rp.summary_cont(self.df_percent.groupby(['Model']))["Moderate%"]["SD"]
-        plt.bar([i for i in model_sd.index], [100 * i for i in model_means.values],
-                yerr=[i * 100 for i in model_sd], capsize=10, ecolor='black',
-                color=["Red", "Blue", "Green", "Purple"], edgecolor='black', linewidth=2)
-        plt.ylabel(" ")
-        plt.title("Moderate")
-
-        # VIGOROUS
-        plt.subplot(2, 3, 4)
-        model_means = rp.summary_cont(self.df_percent.groupby(['Model']))["Vigorous%"]["Mean"]
-        model_sd = rp.summary_cont(self.df_percent.groupby(['Model']))["Vigorous%"]["SD"]
-        plt.bar([i for i in model_sd.index], [100 * i for i in model_means.values],
-                yerr=[i * 100 for i in model_sd], capsize=10, ecolor='black',
-                color=["Red", "Blue", "Green", "Purple"], edgecolor='black', linewidth=2)
-        plt.ylabel("% of Collection")
-        plt.title("Vigorous")
+        plt.title("Light Activity")
 
         # MVPA
-        plt.subplot(2, 3, 5)
-        model_means = rp.summary_cont(self.df_percent.groupby(['Model']))["MVPA%"]["Mean"]
-        model_sd = rp.summary_cont(self.df_percent.groupby(['Model']))["MVPA%"]["SD"]
-        plt.bar([i for i in model_sd.index], [100 * i for i in model_means.values],
-                yerr=[i * 100 for i in model_sd], capsize=10, ecolor='black',
-                color=["Red", "Blue", "Green", "Purple"], edgecolor='black', linewidth=2)
+        plt.subplot(1, 3, 3)
+        model_means = self.descriptive_stats["MVPA%"]
+        model_ci = self.df_ci["MVPA"]
+        plt.bar([i for i in model_means.index], [100 * i for i in model_means.values],
+                yerr=[i * 100 for i in model_ci], capsize=8, ecolor='black',
+                color=["White", "silver", "grey", "#404042"], edgecolor='black', linewidth=2)
         plt.ylabel(" ")
         plt.title("MVPA")
-
-        # TOTAL NON-SEDENTARY
-        plt.subplot(2, 3, 6)
-        model_means = rp.summary_cont(self.df_percent.groupby(['Model']))["TotalActive%"]["Mean"]
-        model_sd = rp.summary_cont(self.df_percent.groupby(['Model']))["TotalActive%"]["SD"]
-        plt.bar([i for i in model_sd.index], [100 * i for i in model_means.values],
-                yerr=[i * 100 for i in model_sd], capsize=10, ecolor='black',
-                color=["Red", "Blue", "Green", "Purple"], edgecolor='black', linewidth=2)
-        plt.ylabel(" ")
-        plt.title("Any Activity")
 
     def calculate_cis(self):
 
@@ -194,8 +164,6 @@ class Objective1:
                                            get_group(model)[self.df_percent.keys()[column]]).tconfint_mean()
                 ci_width = (ci_range[1] - ci_range[0]) / 2
 
-                print("{} - {}: {}".format(model, self.df_percent.keys()[column], round(ci_width, 5)))
-
                 cis.append(ci_width)
 
         output = np.array(cis).reshape(3, 4)
@@ -205,4 +173,4 @@ class Objective1:
         self.df_ci.insert(loc=0, column="Model", value=["Ankle", "HR", "HR-Acc", "Wrist"])
 
 
-x = Objective1(intensity="Sedentary%")
+x = Objective1()

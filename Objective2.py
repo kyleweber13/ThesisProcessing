@@ -6,6 +6,7 @@ import pingouin as pg
 import seaborn as sns
 import numpy as np
 import statsmodels.stats.api as sms
+import matplotlib.pyplot as plt
 
 usable_subjs = LocateUsableParticipants.SubjectSubset(check_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/"
                                                                  "OND07_ProcessingStatus.xlsx",
@@ -95,16 +96,50 @@ class Objective2:
         long.columns = ["ID", "Comparison", "Kappa"]
 
         sns.set(style="ticks")
-        ax = sns.boxplot(data=df.iloc[:, 1:-1], color='white', fliersize=0)
+
+        # Boxplot sorted by group means
+        ax = sns.boxplot(data=df.iloc[:, 1:-1], order=[i for i in df.iloc[1:-1].describe().
+                         iloc[1, ].sort_values().index][:-2], color='white', fliersize=0)
+
+        # Adds individual datapoints
         ax = sns.stripplot(data=long, x="Comparison", y="Kappa", hue="ID", palette="bright", jitter=True,
-                           edgecolor='black',
-                           order=["Ankle-Wrist", "Wrist-HR", "Wrist-HRAcc", "Ankle-HR", "Ankle-HRAcc", "HR-HRAcc"])
+                           edgecolor='black', order=[i for i in df.iloc[1:-1].describe().
+                           iloc[1, ].sort_values().index][:-2])
+
         ax.legend_.remove()
         ax.set_xlabel("")
+        ax.set_ylabel("Cohen's Kappa")
         ax.set_yticks(np.arange(0, 1.1, .1))
-        ax.set_title("Objective #2: Kappa by Model and Participant")
+        ax.set_title("Objective #2: Kappa Boxplot by Model")
         ax.set_ylim(0, 1)
+
+    def kappa_scatterplot(self):
+
+        marker_type = ["o", "^", "s", "o", "^", "s"]
+        colours = ["white", "white", "white", "black", "black", "black"]
+
+        for col in range(1, 7):
+            plt.scatter(np.arange(1, self.df.shape[0]+1), self.df.iloc[:, col], label=self.df.keys()[col],
+                        marker=marker_type[col-1], color=colours[col-1], edgecolors="black")
+
+        plt.title("Objective #2: Cohen's Kappa by Model and Participant")
+        plt.xticks(np.arange(1, self.df.shape[0]+4))
+        plt.ylabel("Cohen's Kappa")
+        plt.ylim(0, 1.1)
+        plt.yticks(np.arange(0, 1.1, .1))
+        plt.legend(loc='upper right')
+
+    def plot_means(self):
+
+        plt.title("Objective #2: Cohen's Kappa by Model Comparison (Mean ± 95%CI) [n={}]".format(self.df.shape[0]))
+        plt.bar([i for i in self.descriptive_stats_kappa.sort_values("Kappa_mean").index],
+                self.descriptive_stats_kappa.sort_values("Kappa_mean")["Kappa_mean"],
+                 yerr=self.kappa_cis["95%CI Width"], capsize=8, ecolor='black',
+                color='grey', edgecolor='black', linewidth=2)
+        plt.ylim(0, 1.1, .1)
+        plt.ylabel("Cohen's Kappa")
 
 
 x = Objective2(data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Activity and Kappa Data/'
                          '3b_Kappa_RepeatedParticipantsOnly.xlsx')
+
