@@ -37,7 +37,7 @@ class Subject:
 
     def __init__(self, from_processed, raw_edf_folder=None, subjectID=None,
                  load_wrist=False, load_ankle=False, load_ecg=False,
-                 load_raw_ecg=False, load_raw_ankle=False, load_raw_wrist=False,
+                 load_raw_ecg=False, load_bittium_accel=False, load_raw_ankle=False, load_raw_wrist=False,
                  epoch_len=15, remove_epoch_baseline=False,
                  rest_hr_window=60, n_epochs_rest_hr=10, hracc_threshold=30,
                  crop_index_file=None, filter_ecg=False,
@@ -102,6 +102,7 @@ class Subject:
         self.load_ecg = load_ecg
         self.ecg_filepath=None
         self.load_raw_ecg = load_raw_ecg
+        self.load_bittium_accel = load_bittium_accel
         self.filter_ecg = filter_ecg
 
         if not self.load_ecg and (self.load_ankle or self.load_wrist):
@@ -122,7 +123,6 @@ class Subject:
 
         ImportDemographics.import_demographics(subject_object=self)
 
-        self.get_raw_filepaths()
         self.crop_files()
         self.create_objects()
 
@@ -148,8 +148,8 @@ class Subject:
             self.stats = ModelStats.Stats(subject_object=self)
 
         # Runs daily summary measures
-        if self.load_ecg and self.load_wrist:
-            self.daily_summary = DailyReports.DailyReport(subject_object=self)
+        # if self.load_ecg and self.load_wrist:
+        #    self.daily_summary = DailyReports.DailyReport(subject_object=self)
 
         processing_end = datetime.now()
 
@@ -182,6 +182,7 @@ class Subject:
             if len(wrist_filenames) == 0:
                 print("Could not find the correct wrist accelerometer file.")
                 wrist_filename = None
+                self.load_wrist = False
 
             if len(wrist_temperature_filenames) == 2:
                 wrist_temperature_filename = [i for i in wrist_temperature_filenames if dom_hand + "Wrist" not in i][0]
@@ -201,12 +202,14 @@ class Subject:
             if len(ankle_filenames) == 0:
                 print("Could not find the correct ankle accelerometer file.")
                 ankle_filename = None
+                self.load_ankle = None
 
         if self.load_ecg:
             ecg_filename = [self.raw_edf_folder + i for i in subject_file_list if "BF" in i][0]
             if len([self.raw_edf_folder + i for i in subject_file_list if "BF" in i]) == 0:
                 print("Could not find the correct ECG file.")
                 ecg_filename = None
+                self.load_ecg = None
 
         return wrist_filename, wrist_temperature_filename, ankle_filename, ecg_filename
 
@@ -274,6 +277,7 @@ class Subject:
         if self.ecg_filepath is not None:
             self.ecg = ECG.ECG(filepath=self.ecg_filepath,
                                from_processed=self.from_processed, load_raw=self.load_raw_ecg,
+                               load_accel=self.load_bittium_accel,
                                filter=self.filter_ecg,
                                output_dir=self.output_dir, write_results=self.write_results, epoch_len=self.epoch_len,
                                start_offset=self.start_offset_dict["ECG"], end_offset=self.end_offset_dict["ECG"],
@@ -435,11 +439,13 @@ class Subject:
             pass
 
         # HEART RATE -------------------------------------------------------------------------------------------------
+        valid_hr = [i if i > 0 else None for i in self.ecg.epoch_hr[:len(self.ecg.epoch_timestamps)]]
 
         try:
             ax3.plot(self.ecg.epoch_timestamps[:len(self.ecg.epoch_hr)],
-                     self.ecg.epoch_hr[:len(self.ecg.epoch_timestamps)],
+                     valid_hr[:len(self.ecg.epoch_timestamps)],
                      label='HR', color='black')
+            ax3.set_ylim(40, 200)
             ax3.legend(loc='upper left')
             ax3.set_ylabel("HR (bpm)")
 
@@ -463,16 +469,14 @@ class Subject:
                 if day1[3] != "N/A" and day2[0] != "N/A":
                     # Overnight --> green
                     ax3.fill_betweenx(x1=day1[3], x2=day2[0],
-                                      y=np.arange(min([i for i in self.ecg.epoch_hr if i is not None]),
-                                                  max([i for i in self.ecg.epoch_hr if i is not None])),
+                                      y=[40, 200],
                                       color='green', alpha=0.35)
 
                 if day1[2] != "N/A" and day1[1] != "N/A":
 
                     # Naps --> red
                     ax3.fill_betweenx(x1=day1[2], x2=day1[1],
-                                      y=np.arange(min([i for i in self.ecg.epoch_hr if i is not None]),
-                                                  max([i for i in self.ecg.epoch_hr if i is not None])),
+                                      y=[40, 200],
                                       color='red', alpha=0.35)
 
         except (AttributeError, TypeError, ValueError):
@@ -551,7 +555,7 @@ class Subject:
 
             ax2.plot(self.sleep.epoch_timestamps,
                      ["Awake" if i == 0 else "Asleep" for i in self.sleep.status[:len(self.sleep.epoch_timestamps)]],
-                     color='green', label="Sleep")
+                     color='black', label="Sleep")
 
             # Fills in region where participant was asleep
             for day1, day2 in zip(self.sleep.data[:], self.sleep.data[1:]):
@@ -796,6 +800,48 @@ class Subject:
                              color='gray', alpha=0.5)
 
             ax3.legend()
+
+        ax3.xaxis.set_major_formatter(xfmt)
+        ax3.xaxis.set_major_locator(locator)
+        plt.xticks(rotation=45, fontsize=6)
+
+    def plot_raw_data(self, downsample=5):
+
+        fig, (ax1, ax2, ax3) = plt.subplots(3, sharex='col', figsize=(10, 7))
+        plt.suptitle("Raw Data (Downsample ratio = {})".format(downsample))
+
+        # WRIST DATA
+        try:
+            ax1.plot(self.ankle.raw.timestamps[::downsample], self.ankle.raw.x[::downsample], color='black',
+                     label="Ankle ({}Hz)".format(round(self.ankle.raw.sample_rate/downsample, 1)))
+            ax1.legend()
+
+        except (AttributeError, ValueError):
+            print("-No raw ankle data to plot.")
+            pass
+
+        # WRIST DATA
+        try:
+            ax2.plot(self.wrist.raw.timestamps[::downsample], self.wrist.raw.x[::downsample], color='black',
+                     label="Wrist ({}Hz)".format(round(self.wrist.raw.sample_rate/downsample, 1)))
+            ax2.legend()
+
+        except (AttributeError, ValueError):
+            print("-No raw wrist data to plot.")
+            pass
+
+        # ECG DATA
+        try:
+            ax3.plot(self.ecg.timestamps[::downsample], self.ecg.filtered[::downsample], color='red',
+                     label="Filtered ECG ({}Hz)".format(round(self.ecg.sample_rate/downsample, 1)))
+            ax3.legend()
+
+        except (AttributeError, ValueError):
+            print("-No raw ECG data to plot.")
+            pass
+
+        xfmt = mdates.DateFormatter("%a %b %d, %H:%M")
+        locator = mdates.HourLocator(byhour=[0, 8, 16], interval=1)
 
         ax3.xaxis.set_major_formatter(xfmt)
         ax3.xaxis.set_major_locator(locator)
