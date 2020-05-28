@@ -12,7 +12,6 @@ import csv
 import progressbar
 from matplotlib.ticker import PercentFormatter
 from random import randint
-import time
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -24,7 +23,7 @@ class ECG:
 
     def __init__(self, filepath=None, output_dir=None, age=0, start_offset=0, end_offset=0,
                  rest_hr_window=60, n_epochs_rest=10,
-                 epoch_len=15,
+                 epoch_len=15, load_accel=False,
                  filter=False, low_f=1, high_f=30, f_type="bandpass",
                  load_raw=False, from_processed=True, write_results=True):
         """Class that contains raw and processed ECG data.
@@ -75,28 +74,42 @@ class ECG:
         self.f_type = f_type
 
         self.load_raw = load_raw
+        self.load_accel = load_accel
         self.from_processed = from_processed
         self.write_results = write_results
 
+        self.accel_sample_rate = 1
+        self.accel_x = None
+        self.accel_y = None
+        self.accel_z = None
+        self.accel_vm = None
+        self.svm = []
+
         # Raw data
         if self.load_raw:
-            self.ecg = ImportEDF.Bittium(filepath=self.filepath,
+            self.ecg = ImportEDF.Bittium(filepath=self.filepath, load_accel=self.load_accel,
                                          start_offset=self.start_offset, end_offset=self.end_offset,
                                          filter=self.filter, low_f=self.low_f, high_f=self.high_f, f_type=self.f_type)
 
             self.sample_rate = self.ecg.sample_rate
+            self.accel_sample_rate = self.ecg.accel_sample_rate
             self.raw = self.ecg.raw
             self.filtered = self.ecg.filtered
             self.timestamps = self.ecg.timestamps
             self.epoch_timestamps = self.ecg.epoch_timestamps
 
+            self.accel_x, self.accel_y, self.accel_z, self.accel_vm = self.ecg.x, self.ecg.y, self.ecg.z, self.ecg.vm
+
             del self.ecg
+
+        if self.load_accel:
+            self.epoch_accel()
 
         # Performs quality control check on raw data and epochs data
         if self.from_processed:
             self.epoch_validity, self.epoch_hr = None, None
         if not self.from_processed:
-            self.epoch_validity, self.epoch_hr = self.check_quality()
+            self.epoch_validity, self.epoch_hr, self.avg_voltage = self.check_quality()
 
         # Loads epoched data from existing file
         if self.from_processed:
@@ -121,6 +134,17 @@ class ECG:
         if self.write_results:
             self.write_model()
 
+    def epoch_accel(self):
+
+        for i in range(0, len(self.accel_vm), int(self.accel_sample_rate * self.epoch_len)):
+
+            if i + self.epoch_len * self.accel_sample_rate > len(self.accel_vm):
+                break
+
+            vm_sum = sum(self.accel_vm[i:i + self.epoch_len * self.accel_sample_rate])
+
+            self.svm.append(round(vm_sum, 5))
+
     def check_quality(self):
         """Performs quality check using Orphanidou et al. (2015) algorithm that has been tweaked to factor in voltage
            range as well.
@@ -134,6 +158,7 @@ class ECG:
 
         validity_list = []
         epoch_hr = []
+        avg_voltage = []
 
         bar = progressbar.ProgressBar(maxval=len(self.raw),
                                       widgets=[progressbar.Bar('>', '', '|'), ' ',
@@ -144,6 +169,8 @@ class ECG:
             bar.update(start_index + 1)
 
             qc = CheckQuality(ecg_object=self, start_index=start_index, epoch_len=self.epoch_len)
+
+            avg_voltage.append(qc.volt_range)
 
             if qc.valid_period:
                 validity_list.append(0)
@@ -158,7 +185,7 @@ class ECG:
         proc_time = (t1 - t0).seconds
         print("\n" + "Quality check complete ({} seconds).".format(round(proc_time, 2)))
 
-        return validity_list, epoch_hr
+        return validity_list, epoch_hr, avg_voltage
 
     def generate_quality_report(self):
         """Calculates how much of the data was usable. Returns values in dictionary."""
