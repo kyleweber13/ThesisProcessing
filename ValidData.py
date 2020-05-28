@@ -29,6 +29,7 @@ class AllDevices:
         self.ankle_intensity = None
         self.ankle_intensity_group = None
         self.wrist_intensity = None
+        self.wrist_svm = None
         self.hr_intensity = None
         self.hracc_intensity = None
 
@@ -52,6 +53,8 @@ class AllDevices:
         self.hracc_totals = None
         self.ankle_hracc_comparison = None
         self.hr_hracc_comparison = None
+        self.diff_dict_percent = None
+        self.diff_dict_minutes = None
 
         self.percent_valid = None
         self.hours_valid = None
@@ -61,6 +64,7 @@ class AllDevices:
         self.hr_validity_counts = None
 
         self.avg_ankle_counts = 0
+        self.avg_wrist_counts = 0
 
         # =============================================== RUNS METHODS ================================================
 
@@ -81,10 +85,12 @@ class AllDevices:
 
         self.check_ecgvalidity_activitylevel()
 
-        self.calculate_ankle_hracc_diff()
-        self.calculate_hr_hracc_diff()
+        # self.calculate_ankle_hracc_diff()
+        # self.calculate_hr_hracc_diff()
+        # self.create_model_differences()
 
-        self.calculate_average_valid_ankle_counts()
+        if self.subject_object.load_ankle:
+            self.calculate_average_valid_counts()
 
         if self.write_results:
             self.write_activity_totals()
@@ -141,6 +147,9 @@ class AllDevices:
         if self.subject_object.wrist_filepath is not None:
             self.wrist_intensity = self.subject_object.wrist.model.epoch_intensity if \
                 self.subject_object.wrist.model.epoch_intensity is not None else None
+
+            self.wrist_svm = self.subject_object.wrist.epoch.svm if \
+                self.subject_object.wrist.epoch.svm is not None else None
 
         # HR intensity data
         if self.subject_object.ecg_filepath is not None:
@@ -238,11 +247,14 @@ class AllDevices:
         if self.wrist_intensity is not None and self.wrist is None:
             self.wrist = [self.wrist_intensity[i] if self.sleep_validity[i] == 0 and self.nonwear_validity[i] == 0
                           else None for i in range(self.data_len)]
-
+            self.wrist_svm = [self.wrist_svm[i] if self.sleep_validity[i] == 0 and self.nonwear_validity[i] == 0
+                              else None for i in range(self.data_len)]
         # If wrist data available and invalid data was removed using HR
         if self.wrist_intensity is not None and self.wrist is not None:
             self.wrist = [self.wrist[i] if self.sleep_validity[i] == 0 and self.nonwear_validity[i] == 0
                           else None for i in range(self.data_len)]
+            self.wrist_svm = [self.wrist_svm[i] if self.sleep_validity[i] == 0 and self.nonwear_validity[i] == 0
+                              else None for i in range(self.data_len)]
 
         # Heart Rate -------------------------------------------------------------------------------------------------
         if self.hr_intensity is not None and self.hr is None:
@@ -267,7 +279,7 @@ class AllDevices:
             self.percent_valid = round(100 * (self.data_len - self.ankle.count(None)) / self.data_len, 1)
 
             self.hours_valid = round((len(self.ankle) * self.subject_object.epoch_len / 3600) *
-                                     (self.percent_valid / 100), 2)
+                                     (self.percent_valid / 100), 4)
 
             self.final_epoch_validity = ["Invalid" if i is None else "Valid" for i in self.ankle]
 
@@ -277,7 +289,7 @@ class AllDevices:
                 self.percent_valid = round(100 * (self.data_len - self.wrist.count(None)) / self.data_len, 1)
 
                 self.hours_valid = round((len(self.wrist) * self.subject_object.epoch_len / 3600) *
-                                         (self.percent_valid / 100), 2)
+                                         (self.percent_valid / 100), 4)
 
                 self.final_epoch_validity = ["Invalid" if i is None else "Valid" for i in self.wrist]
 
@@ -286,7 +298,7 @@ class AllDevices:
                 self.percent_valid = round(100 * (self.data_len - self.hr.count(None)) / self.data_len, 1)
 
                 self.hours_valid = round((len(self.hr) * self.subject_object.epoch_len / 3600) *
-                                         (self.percent_valid / 100), 2)
+                                         (self.percent_valid / 100), 4)
 
                 self.final_epoch_validity = ["Invalid" if i is None else "Valid" for i in self.hr]
 
@@ -401,9 +413,10 @@ class AllDevices:
         self.validity_dict["Wrist Counts (t)"] = wrist_ttest_t
         self.validity_dict["Wrist Counts (p)"] = wrist_ttest_p
 
-    def calculate_average_valid_ankle_counts(self):
+    def calculate_average_valid_counts(self):
 
         self.avg_ankle_counts = np.mean([i for i in self.ankle_svm if i is not None])
+        self.avg_wrist_counts = np.mean([i for i in self.wrist_svm if i is not None])
 
     def plot_validity_comparison(self):
 
@@ -522,23 +535,23 @@ class AllDevices:
 
             self.ankle_totals = {"Model": "Ankle",
                                  "Sedentary": self.ankle.count(0) / epoch_to_minutes,
-                                 "Sedentary%": round(self.ankle.count(0) / n_valid_epochs, 3),
+                                 "Sedentary%": round(self.ankle.count(0) / n_valid_epochs, 5),
                                  "Light": (self.ankle.count(1)) / epoch_to_minutes,
-                                 "Light%": round(self.ankle.count(1) / n_valid_epochs, 3),
+                                 "Light%": round(self.ankle.count(1) / n_valid_epochs, 5),
                                  "Moderate": self.ankle.count(2) / epoch_to_minutes,
-                                 "Moderate%": round(self.ankle.count(2) / n_valid_epochs, 3),
+                                 "Moderate%": round(self.ankle.count(2) / n_valid_epochs, 5),
                                  "Vigorous": self.ankle.count(3) / epoch_to_minutes,
-                                 "Vigorous%": round(self.ankle.count(3) / n_valid_epochs, 3)}
+                                 "Vigorous%": round(self.ankle.count(3) / n_valid_epochs, 5)}
 
             self.ankle_totals_group = {"Model": "AnkleGroup",
                                        "Sedentary": self.ankle_group.count(0) / epoch_to_minutes,
-                                       "Sedentary%": round(self.ankle_group.count(0) / n_valid_epochs, 3),
+                                       "Sedentary%": round(self.ankle_group.count(0) / n_valid_epochs, 5),
                                        "Light": (self.ankle_group.count(1)) / epoch_to_minutes,
-                                       "Light%": round(self.ankle_group.count(1) / n_valid_epochs, 3),
+                                       "Light%": round(self.ankle_group.count(1) / n_valid_epochs, 5),
                                        "Moderate": self.ankle_group.count(2) / epoch_to_minutes,
-                                       "Moderate%": round(self.ankle_group.count(2) / n_valid_epochs, 3),
+                                       "Moderate%": round(self.ankle_group.count(2) / n_valid_epochs, 5),
                                        "Vigorous": self.ankle_group.count(3) / epoch_to_minutes,
-                                       "Vigorous%": round(self.ankle_group.count(3) / n_valid_epochs, 3)}
+                                       "Vigorous%": round(self.ankle_group.count(3) / n_valid_epochs, 5)}
 
         if self.ankle is None:
             self.ankle_totals = {"Model": "Ankle",
@@ -561,13 +574,13 @@ class AllDevices:
 
             self.wrist_totals = {"Model": "Wrist",
                                  "Sedentary": self.wrist.count(0) / epoch_to_minutes,
-                                 "Sedentary%": round(self.wrist.count(0) / n_valid_epochs, 3),
+                                 "Sedentary%": round(self.wrist.count(0) / n_valid_epochs, 5),
                                  "Light": (self.wrist.count(1)) / epoch_to_minutes,
-                                 "Light%": round(self.wrist.count(1) / n_valid_epochs, 3),
+                                 "Light%": round(self.wrist.count(1) / n_valid_epochs, 5),
                                  "Moderate": self.wrist.count(2) / epoch_to_minutes,
-                                 "Moderate%": round(self.wrist.count(2) / n_valid_epochs, 3),
+                                 "Moderate%": round(self.wrist.count(2) / n_valid_epochs, 5),
                                  "Vigorous": self.wrist.count(3) / epoch_to_minutes,
-                                 "Vigorous%": round(self.wrist.count(3) / n_valid_epochs, 3)}
+                                 "Vigorous%": round(self.wrist.count(3) / n_valid_epochs, 5)}
 
             if self.wrist is None:
                 self.wrist_totals = {"Model": "Wrist",
@@ -584,13 +597,13 @@ class AllDevices:
 
             self.hr_totals = {"Model": "HR",
                               "Sedentary": self.hr.count(0) / epoch_to_minutes,
-                              "Sedentary%": round(self.hr.count(0) / n_valid_epochs, 3),
+                              "Sedentary%": round(self.hr.count(0) / n_valid_epochs, 5),
                               "Light": (self.hr.count(1)) / epoch_to_minutes,
-                              "Light%": round(self.hr.count(1) / n_valid_epochs, 3),
+                              "Light%": round(self.hr.count(1) / n_valid_epochs, 5),
                               "Moderate": self.hr.count(2) / epoch_to_minutes,
-                              "Moderate%": round(self.hr.count(2) / n_valid_epochs, 3),
+                              "Moderate%": round(self.hr.count(2) / n_valid_epochs, 5),
                               "Vigorous": self.hr.count(3) / epoch_to_minutes,
-                              "Vigorous%": round(self.hr.count(3) / n_valid_epochs, 3)}
+                              "Vigorous%": round(self.hr.count(3) / n_valid_epochs, 5)}
 
         if self.hr is None:
             self.hr_totals = {"Model": "HR",
@@ -607,18 +620,18 @@ class AllDevices:
 
             self.hracc_totals = {"Model": "HR-Acc",
                                  "Sedentary": self.hr_acc.count(0) / epoch_to_minutes,
-                                 "Sedentary%": round(self.hr_acc.count(0) / n_valid_epochs, 3),
+                                 "Sedentary%": round(self.hr_acc.count(0) / n_valid_epochs, 5),
                                  "Light": (self.hr_acc.count(1)) / epoch_to_minutes,
-                                 "Light%": round(self.hr_acc.count(1) / n_valid_epochs, 3),
+                                 "Light%": round(self.hr_acc.count(1) / n_valid_epochs, 5),
                                  "Moderate": self.hr_acc.count(2) / epoch_to_minutes,
-                                 "Moderate%": round(self.hr_acc.count(2) / n_valid_epochs, 3),
+                                 "Moderate%": round(self.hr_acc.count(2) / n_valid_epochs, 5),
                                  "Vigorous": self.hr_acc.count(3) / epoch_to_minutes,
-                                 "Vigorous%": round(self.hr_acc.count(3) / n_valid_epochs, 3)}
+                                 "Vigorous%": round(self.hr_acc.count(3) / n_valid_epochs, 5)}
 
     def write_activity_totals(self):
 
-        with open("{}Model Output/OND07_WTL_{}_01_Valid_Activity_Totals.csv".format(self.subject_object.output_dir,
-                                                                                    self.subject_object.subjectID),
+        with open("{}/OND07_WTL_{}_01_Valid_Activity_Totals.csv".format(self.subject_object.output_dir,
+                                                                        self.subject_object.subjectID),
                   'w', newline='') as outfile:
 
             fieldnames = ['Model', 'Sedentary', 'Sedentary%', 'Light', 'Light%',
@@ -640,8 +653,8 @@ class AllDevices:
 
             print()
             print("Saved activity profiles from valid data to file "
-                  "{}Model Output/OND07_WTL_{}_01_Valid_Activity_Totals.csv".format(self.subject_object.output_dir,
-                                                                                    self.subject_object.subjectID))
+                  "{}OND07_WTL_{}_01_Valid_Activity_Totals.csv".format(self.subject_object.output_dir,
+                                                                       self.subject_object.subjectID))
 
     def write_valid_epochs(self):
 
@@ -921,6 +934,90 @@ class AllDevices:
         plt.bar(["Individual", "Group"], vigorous_minutes, color='red', edgecolor='black')
         plt.ylim(0, max(vigorous_minutes) * 1.2)
 
+    def create_model_differences(self):
+        """
+        Calculates between-model differences using % of valid time. Creates a dictionary for all 6 between-model
+        differences where the values are lists that correspond to [sedentary, light, moderate, vigorous] differences.
+        """
+
+        # PERCENT -----------------------------------------------------------------------------------------------------
+        self.diff_dict_percent = {"Wrist-Ankle": [],
+                                  "Wrist-HR": [],
+                                  "Wrist-HRAcc": [],
+                                  "Ankle-HR": [],
+                                  "Ankle-HRAcc": [],
+                                  "HR-HRAcc": []}
+
+        # Wrist-Ankle comparison
+        wrist_ankle = [round(100*(w - a), 5) for w, a in zip([i for i in self.wrist_totals.values()][2::2],
+                                                             [i for i in self.ankle_totals.values()][2::2])]
+
+        # Wrist-HR comparison
+        wrist_hr = [round(100*(w - h), 5) for w, h in zip([i for i in self.wrist_totals.values()][2::2],
+                                                          [i for i in self.hr_totals.values()][2::2])]
+
+        # Wrist-HRAcc comparison
+        wrist_hracc = [round(100*(w - ha), 5) for w, ha in zip([i for i in self.wrist_totals.values()][2::2],
+                                                               [i for i in self.hracc_totals.values()][2::2])]
+
+        # Ankle-HR comparison
+        ankle_hr = [round(100*(a - h), 5) for a, h in zip([i for i in self.ankle_totals.values()][2::2],
+                                                          [i for i in self.hr_totals.values()][2::2])]
+
+        # Ankle-HRAcc comparison
+        ankle_hracc = [round(100*(a - ha), 5) for a, ha in zip([i for i in self.ankle_totals.values()][2::2],
+                                                               [i for i in self.hracc_totals.values()][2::2])]
+
+        # HR-HRAcc comparison
+        hr_hracc = [round(100*(h - ha), 5) for h, ha in zip([i for i in self.hr_totals.values()][2::2],
+                                                            [i for i in self.hracc_totals.values()][2::2])]
+
+        self.diff_dict_percent["Wrist-Ankle"] = wrist_ankle
+        self.diff_dict_percent["Wrist-HR"] = wrist_hr
+        self.diff_dict_percent["Wrist-HRAcc"] = wrist_hracc
+        self.diff_dict_percent["Ankle-HR"] = ankle_hr
+        self.diff_dict_percent["Ankle-HRAcc"] = ankle_hracc
+        self.diff_dict_percent["HR-HRAcc"] = hr_hracc
+
+        # MINUTES -----------------------------------------------------------------------------------------------------
+        self.diff_dict_minutes = {"Wrist-Ankle": [],
+                                  "Wrist-HR": [],
+                                  "Wrist-HRAcc": [],
+                                  "Ankle-HR": [],
+                                  "Ankle-HRAcc": [],
+                                  "HR-HRAcc": []}
+
+        # Wrist-Ankle comparison
+        wrist_ankle_mins = [round(w - a, 5) for w, a in zip([i for i in self.wrist_totals.values()][1::2],
+                                                            [i for i in self.ankle_totals.values()][1::2])]
+
+        # Wrist-HR comparison
+        wrist_hr_mins = [round(w - h, 5) for w, h in zip([i for i in self.wrist_totals.values()][1::2],
+                                                         [i for i in self.hr_totals.values()][1::2])]
+
+        # Wrist-HRAcc comparison
+        wrist_hracc_mins = [round(w - ha, 5) for w, ha in zip([i for i in self.wrist_totals.values()][1::2],
+                                                              [i for i in self.hracc_totals.values()][1::2])]
+
+        # Ankle-HR comparison
+        ankle_hr_mins = [round(a - h, 5) for a, h in zip([i for i in self.ankle_totals.values()][1::2],
+                                                         [i for i in self.hr_totals.values()][1::2])]
+
+        # Ankle-HRAcc comparison
+        ankle_hracc_mins = [round(a - ha, 5) for a, ha in zip([i for i in self.ankle_totals.values()][1::2],
+                                                              [i for i in self.hracc_totals.values()][1::2])]
+
+        # HR-HRAcc comparison
+        hr_hracc_mins = [round(h - ha, 5) for h, ha in zip([i for i in self.hr_totals.values()][1::2],
+                                                           [i for i in self.hracc_totals.values()][1::2])]
+
+        self.diff_dict_minutes["Wrist-Ankle"] = wrist_ankle_mins
+        self.diff_dict_minutes["Wrist-HR"] = wrist_hr_mins
+        self.diff_dict_minutes["Wrist-HRAcc"] = wrist_hracc_mins
+        self.diff_dict_minutes["Ankle-HR"] = ankle_hr_mins
+        self.diff_dict_minutes["Ankle-HRAcc"] = ankle_hracc_mins
+        self.diff_dict_minutes["HR-HRAcc"] = hr_hracc_mins
+
 
 class AccelOnly:
 
@@ -943,6 +1040,7 @@ class AccelOnly:
         self.ankle_intensity_group = None
         self.wrist_intensity = None
         self.ankle_svm = None
+        self.wrist_svm = None
 
         # Data used to determine what epochs are valid
         self.sleep_validity = None
@@ -966,6 +1064,7 @@ class AccelOnly:
         self.validity_dict = None
 
         self.avg_ankle_counts = 0
+        self.avg_wrist_counts = 0
 
         # =============================================== RUNS METHODS ================================================
 
@@ -975,9 +1074,6 @@ class AccelOnly:
         # Data used to determine which epochs are valid ---------------------------------------------------------------
         # Removal based on sleep data
         self.remove_invalid_sleep_and_nonwear()
-
-        # Removal based on wear status
-        # self.remove_nonwear()
 
         self.recalculate_activity_totals()
 
@@ -1033,6 +1129,9 @@ class AccelOnly:
             self.wrist_intensity = self.subject_object.wrist.model.epoch_intensity if \
                 self.subject_object.wrist.model.epoch_intensity is not None else None
 
+            self.wrist_svm = self.subject_object.wrist.epoch.svm \
+                if self.subject_object.wrist.epoch.svm is not None else None
+
         # Sleep validity data
         if self.subject_object.sleeplog_file is not None:
             self.sleep_validity = self.subject_object.sleep.status if \
@@ -1051,7 +1150,7 @@ class AccelOnly:
             print("\n" + "Removing epochs during non-wear...")
         if self.subject_object.sleeplog_file is not None and self.subject_object.nonwear_file is not None:
             print("\n" + "Removing epochs during sleep and during non-wear...")
-        if self.subject_object.sleeplog_file is  None and self.subject_object.nonwear_file is None:
+        if self.subject_object.sleeplog_file is None and self.subject_object.nonwear_file is None:
             print("\nNo sleep or non-wear data to use...")
 
         if self.subject_object.nonwear_file is None:
@@ -1075,6 +1174,8 @@ class AccelOnly:
             self.wrist = [self.wrist_intensity[i] if
                           self.sleep_validity[i] == 0 and self.nonwear_validity[i] == 0 else None
                           for i in range(self.data_len)]
+            self.wrist_svm = [self.wrist_svm[i] if self.sleep_validity[i] == 0 and self.nonwear_validity[i] == 0
+                              else None for i in range(self.data_len)]
 
         print("Complete.")
 
@@ -1083,16 +1184,16 @@ class AccelOnly:
         try:
             self.percent_valid = round(100 * (self.data_len - self.ankle.count(None)) / self.data_len, 1)
             self.hours_valid = round((len(self.ankle) * self.subject_object.epoch_len / 3600) *
-                                     (self.percent_valid / 100), 2)
+                                     (self.percent_valid / 100), 4)
             self.final_epoch_validity = ["Invalid" if i is None else "Valid" for i in self.ankle]
         except (TypeError, AttributeError):
             self.percent_valid = round(100 * (self.data_len - self.wrist.count(None)) / self.data_len, 1)
             self.hours_valid = round((len(self.wrist) * self.subject_object.epoch_len / 3600) *
-                                     (self.percent_valid / 100), 2)
+                                     (self.percent_valid / 100), 4)
 
         self.final_epoch_validity = ["Invalid" if i is None else "Valid" for i in self.wrist]
 
-        self.hours_valid = round(self.final_epoch_validity.count("Valid") * self.subject_object.epoch_len / 3600, 2)
+        self.hours_valid = round(self.final_epoch_validity.count("Valid") * self.subject_object.epoch_len / 3600, 4)
 
         print("\n" + "Validity check complete. {}% of the original "
                      "data is valid ({} hours).".format(self.percent_valid, self.hours_valid))
@@ -1194,13 +1295,13 @@ class AccelOnly:
 
             self.ankle_totals = {"Model": "Ankle",
                                  "Sedentary": self.ankle.count(0) / epoch_to_minutes,
-                                 "Sedentary%": round(self.ankle.count(0) / n_valid_epochs, 3),
+                                 "Sedentary%": round(self.ankle.count(0) / n_valid_epochs, 5),
                                  "Light": (self.ankle.count(1)) / epoch_to_minutes,
-                                 "Light%": round(self.ankle.count(1) / n_valid_epochs, 3),
+                                 "Light%": round(self.ankle.count(1) / n_valid_epochs, 5),
                                  "Moderate": self.ankle.count(2) / epoch_to_minutes,
-                                 "Moderate%": round(self.ankle.count(2) / n_valid_epochs, 3),
+                                 "Moderate%": round(self.ankle.count(2) / n_valid_epochs, 5),
                                  "Vigorous": self.ankle.count(3) / epoch_to_minutes,
-                                 "Vigorous%": round(self.ankle.count(3) / n_valid_epochs, 3)}
+                                 "Vigorous%": round(self.ankle.count(3) / n_valid_epochs, 5)}
 
             # Group regression ---------------------------------------------------------------------------------------
             epoch_to_minutes = 60 / self.subject_object.ankle.epoch_len
@@ -1209,13 +1310,13 @@ class AccelOnly:
 
             self.ankle_totals_group = {"Model": "Ankle",
                                        "Sedentary": self.ankle_group.count(0) / epoch_to_minutes,
-                                       "Sedentary%": round(self.ankle_group.count(0) / n_valid_epochs, 3),
+                                       "Sedentary%": round(self.ankle_group.count(0) / n_valid_epochs, 5),
                                        "Light": (self.ankle_group.count(1)) / epoch_to_minutes,
-                                       "Light%": round(self.ankle_group.count(1) / n_valid_epochs, 3),
+                                       "Light%": round(self.ankle_group.count(1) / n_valid_epochs, 5),
                                        "Moderate": self.ankle_group.count(2) / epoch_to_minutes,
-                                       "Moderate%": round(self.ankle_group.count(2) / n_valid_epochs, 3),
+                                       "Moderate%": round(self.ankle_group.count(2) / n_valid_epochs, 5),
                                        "Vigorous": self.ankle_group.count(3) / epoch_to_minutes,
-                                       "Vigorous%": round(self.ankle_group.count(3) / n_valid_epochs, 3)}
+                                       "Vigorous%": round(self.ankle_group.count(3) / n_valid_epochs, 5)}
 
         # WRIST -------------------------------------------------------------------------------------------------------
         if self.wrist is not None:
@@ -1225,17 +1326,18 @@ class AccelOnly:
 
             self.wrist_totals = {"Model": "Wrist",
                                  "Sedentary": self.wrist.count(0) / epoch_to_minutes,
-                                 "Sedentary%": round(self.wrist.count(0) / n_valid_epochs, 3),
+                                 "Sedentary%": round(self.wrist.count(0) / n_valid_epochs, 5),
                                  "Light": (self.wrist.count(1)) / epoch_to_minutes,
-                                 "Light%": round(self.wrist.count(1) / n_valid_epochs, 3),
+                                 "Light%": round(self.wrist.count(1) / n_valid_epochs, 5),
                                  "Moderate": self.wrist.count(2) / epoch_to_minutes,
-                                 "Moderate%": round(self.wrist.count(2) / n_valid_epochs, 3),
+                                 "Moderate%": round(self.wrist.count(2) / n_valid_epochs, 5),
                                  "Vigorous": self.wrist.count(3) / epoch_to_minutes,
-                                 "Vigorous%": round(self.wrist.count(3) / n_valid_epochs, 3)}
+                                 "Vigorous%": round(self.wrist.count(3) / n_valid_epochs, 5)}
 
     def calculate_average_valid_ankle_counts(self):
 
         self.avg_ankle_counts = np.mean([i for i in self.ankle_svm if i is not None])
+        self.avg_wrist_counts = np.mean([i for i in self.wrist_svm if i is not None])
 
     def write_activity_totals(self):
 
@@ -1434,22 +1536,23 @@ class AccelOnly:
 
     def plot_treadmill_protocol(self):
 
-        if not self.load_ankle:
+        if not self.subject_object.load_ankle:
             print("No ankle data available.")
 
-        if self.load_ankle:
+        if self.subject_object.load_ankle:
 
-            fig, (ax1, ax2, ax3) = plt.subplots(3, sharex='col')
+            fig, (ax1, ax2) = plt.subplots(2, sharex='col')
 
-            start_index = int(self.ankle.treadmill.walk_indexes[0] - 5 * (60 / self.epoch_len))
+            start_index = int(self.ankle.treadmill.walk_indexes[0] - 5 * (60 / self.subject_object.epoch_len))
             if start_index < 0:
                 start_index = 0
 
-            end_index = int(self.ankle.treadmill.walk_indexes[-1] + 5 * (60 / self.epoch_len))
+            end_index = int(self.ankle.treadmill.walk_indexes[-1] + 5 * (60 / self.subject_object.epoch_len))
 
-            plt.suptitle("Participant {}: HR and Accel Data during Treadmill Protocol".format(self.subjectID))
+            plt.suptitle("Participant {}: HR and Accel Data during "
+                         "Treadmill Protocol".format(self.subject_object.subjectID))
 
-            if self.wrist_filepath is not None:
+            if self.subject_object.wrist_filepath is not None:
                 ax1.plot(self.wrist.epoch.timestamps[start_index:end_index],
                          self.wrist.epoch.svm[start_index:end_index], label="Wrist", color='black')
                 ax1.set_ylabel("Counts")
@@ -1459,10 +1562,5 @@ class AccelOnly:
                      self.ankle.epoch.svm[start_index:end_index], label="Ankle", color='black')
             ax2.set_ylabel("Counts")
             ax2.legend(loc='upper left')
-
-            if self.load_ecg:
-                ax3.plot(self.ecg.epoch_timestamps[start_index:end_index],
-                         self.ecg.epoch_hr[start_index:end_index], label="HR", color='red')
-                ax3.set_ylabel("HR (bpm)")
 
             plt.show()

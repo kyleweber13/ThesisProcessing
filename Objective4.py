@@ -211,7 +211,7 @@ class Objective4:
         posthoc_para = pg.pairwise_ttests(dv=activity_intensity, subject='ID',
                                           within="Model", between='Group',
                                           data=df,
-                                          padjust="bonf", effsize="cohen", parametric=True)
+                                          padjust="bonf", effsize="hedges", parametric=True)
         posthoc_nonpara = pg.pairwise_ttests(dv=activity_intensity, subject='ID',
                                              within="Model", between='Group',
                                              data=df,
@@ -242,7 +242,8 @@ class Objective4:
 
         plt.bar([i for i in model_means.index], [100 * i for i in model_means.values],
                 yerr=[i * 100 for i in model_ci], capsize=10, ecolor='black',
-                color=["Red", "Blue", "Green", "Purple"], edgecolor='black', linewidth=2)
+                color=["White", "silver", "grey", "#404042"], edgecolor='black', linewidth=2)
+                # color=["Red", "Blue", "Green", "Purple"]
         plt.ylabel("% of Collection")
         plt.title("Model Means")
 
@@ -257,8 +258,8 @@ class Objective4:
         plt.title("Group Means")
 
         plt.subplot(1, 3, 3)
-        sns.pointplot(data=self.df_percent, x="Model", y=intensity, hue="Group",
-                      dodge=True, markers='o', capsize=.1, errwidth=1, palette='Set1')
+        sns.pointplot(data=self.df_percent, x="Model", y=intensity, hue="Group", markers=".", scale=.8,
+                      dodge=True, capsize=.1, errwidth=1, palette='Set1')
         plt.title("All Combination Means")
         plt.ylabel(" ")
 
@@ -311,36 +312,46 @@ class Objective4:
         temp_df["Group"] = self.df_percent["Group"]
         temp_df["Model"] = self.df_percent["Model"]
 
+        # Sets colour schemes
+        if "Ankle" in set(temp_df["Model"]) and "Wrist" in set(temp_df['Model']):
+            colours = sns.color_palette(["#404042", "cornflowerblue"])
+
+        if "HR" in set(temp_df["Model"]) and "Wrist" in set(temp_df['Model']):
+            colours = sns.color_palette(["#404042", "silver"])
+
         sample_name = [i for i in set(self.df_percent["Model"])]
         sample_name = sample_name[0] + "-" + sample_name[1]
 
-        plt.subplots(3, 1)
+        plt.subplots(3, 1, figsize=(9, 6))
         plt.suptitle("{} Sample: Total Activity by Activity Group (n={}/group)".format(sample_name,
                                                                                        int(self.df_percent.shape[0]/4)))
 
         plt.subplot(1, 3, 1)
         sns.pointplot(data=temp_df, x="Group", y="Sedentary%", hue="Model", order=["LOW", "HIGH"], ci=95,
-                      dodge=False, capsize=.1, errwidth=1, palette='Set1')
+                      dodge=False, capsize=.1, errwidth=1, palette=colours, markers=".", scale=.8)
         plt.title("Sedentary")
         plt.ylabel("% of Valid Data")
         plt.ylim(0, 100)
+        plt.yticks(np.arange(0, 110, 10))
         plt.xlabel(" ")
 
         plt.subplot(1, 3, 2)
-        sns.pointplot(data=temp_df, x="Group", y="Light%", hue="Model", order=["LOW", "HIGH"], ci=95,
-                      dodge=False, capsize=.1, errwidth=1, palette='Set1')
+        ax = sns.pointplot(data=temp_df, x="Group", y="Light%", hue="Model", order=["LOW", "HIGH"], ci=95,
+                           dodge=False, capsize=.1, errwidth=1, palette=colours, markers=".", scale=.8)
         plt.title("Light Activity")
         plt.ylabel(" ")
         plt.xlabel(" ")
         plt.ylim(0, 15)
+        ax.legend_.remove()
 
         plt.subplot(1, 3, 3)
-        sns.pointplot(data=temp_df, x="Group", y="MVPA%", hue="Model", order=["LOW", "HIGH"], ci=95,
-                      dodge=False, capsize=.1, errwidth=1, palette="Set1")
+        ax = sns.pointplot(data=temp_df, x="Group", y="MVPA%", hue="Model", order=["LOW", "HIGH"], ci=95,
+                           dodge=False, capsize=.1, errwidth=1, palette=colours, markers=".", scale=.8)
         plt.title("MVPA")
         plt.ylabel(" ")
         plt.xlabel(" ")
         plt.ylim(0, 15)
+        ax.legend_.remove()
 
     def check_kappa_assumptions(self, show_plots=False):
         """Runs Shapiro-Wilk and Levene's test for each group x model combination and prints results.
@@ -402,18 +413,15 @@ class Objective4:
 
         self.df_ci.insert(loc=0, column="Model", value=[models[0], models[0], models[1], models[1]])
 
-    def plot_mains_effects_kappa(self, error_bars="95%CI"):
+    def plot_mains_effects_kappa(self):
 
-        if error_bars == "95%CI":
-            e_bars = self.df_kappa_ci
-        if error_bars == "SD":
-            e_bars = rp.summary_cont(self.df_kappa_long.groupby(['Group']))["Kappa"]["SD"]
+        e_bars = [self.df_kappa_ci[1], self.df_kappa_ci[0]]
 
         group_means = rp.summary_cont(self.df_kappa_long.groupby(['Group']))["Kappa"]["Mean"]
 
-        plt.bar([i for i in group_means.index], [i for i in group_means.values],
+        plt.bar(["LOW", "HIGH"], [group_means["LOW"], group_means["HIGH"]],
                 yerr=[i for i in e_bars], capsize=8, ecolor='black',
-                color=["lightgrey", "dimgrey"], edgecolor='black', alpha=0.5, linewidth=2)
+                color=["white", "dimgrey"], edgecolor='black', alpha=0.5, linewidth=2)
         plt.title("Cohen's Kappa by Activity Group")
 
         plt.ylabel("Kappa")
@@ -583,20 +591,82 @@ class Objective4:
         self.df_kappa_ci = [ci_width_high, ci_width_low]
 
 
+class Comparison:
+
+    def __init__(self, file):
+
+        self.df_kappa = pd.read_excel(file, sheet_name="Kappa")
+        self.df = pd.read_excel(file, sheet_name="Activity")
+        self.anklewrist_t = None
+        self.wristhr_t = None
+
+        self.perform_kappa_t_tests()
+
+    def plot_kappa_means(self):
+
+        # CI calculations
+        ci_range = sms.DescrStatsW(self.df_kappa["All_AnkleWrist"].dropna()).tconfint_mean()
+        ci_all_aw = (ci_range[1] - ci_range[0]) / 2
+
+        ci_range = sms.DescrStatsW(self.df_kappa["All_WristHR"].dropna()).tconfint_mean()
+        ci_all_whr = (ci_range[1] - ci_range[0]) / 2
+
+        ci_range = sms.DescrStatsW(self.df_kappa["AnkleWrist"].dropna()).tconfint_mean()
+        ci_aw = (ci_range[1] - ci_range[0]) / 2
+
+        ci_range = sms.DescrStatsW(self.df_kappa["WristHR"].dropna()).tconfint_mean()
+        ci_whr = (ci_range[1] - ci_range[0]) / 2
+
+        plt.subplots(1, 2, figsize=(9, 6))
+        plt.suptitle("Sample Comparisons (mean ± 95%CI)")
+
+        plt.subplot(1, 2, 1)
+        plt.title("AnkleAcc-WristAcc")
+        plt.bar(x=["n=10", "n=20"], height=[self.df_kappa["All_AnkleWrist"].describe()[1],
+                                            self.df_kappa["AnkleWrist"].describe()[1]],
+                color=['red', 'maroon'], alpha=.85, edgecolor='black',
+                yerr=[ci_all_aw, ci_aw], capsize=8, ecolor='black')
+
+        plt.ylabel("Cohen's Kappa")
+        plt.ylim(0, 1)
+        plt.yticks(np.arange(0, 1.05, .1))
+
+        plt.subplot(1, 2, 2)
+        plt.title("WristAcc-HR")
+        plt.bar(x=["n=10", "n=18"], height=[self.df_kappa["All_WristHR"].describe()[1],
+                                            self.df_kappa["WristHR"].describe()[1]],
+                color=['blue', 'midnightblue'], alpha=.65, edgecolor='black',
+                yerr=[ci_all_whr, ci_whr], capsize=8, ecolor='black')
+
+        plt.ylabel(" ")
+        plt.ylim(0, 1)
+        plt.yticks(np.arange(0, 1.05, .1))
+
+    def perform_kappa_t_tests(self):
+
+        self.anklewrist_t = pg.ttest(x=self.df_kappa["All_AnkleWrist"].dropna(), y=self.df_kappa["AnkleWrist"],
+                                     paired=False, correction="Auto")
+        print("\nAnkle-Wrist Comparison")
+        print(self.anklewrist_t)
+
+        self.wristhr_t = pg.ttest(x=self.df_kappa["All_WristHR"].dropna(), y=self.df_kappa["WristHR"].dropna(),
+                                  paired=False, correction="Auto")
+        print("\nWrist-HR Comparison")
+        print(self.wristhr_t)
+
+
+# c = Comparison(file="/Users/kyleweber/Desktop/Data/OND07/Processed Data/Activity and Kappa Data/Comparison_Data.xlsx")
+
+
 anklewrist = Objective4(activity_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Activity and Kappa Data/'
                                            '4a_Activity_AnkleWrist_ByAnkle.xlsx',
                         kappa_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Activity and Kappa Data/'
                                         '4b_Kappa_AnkleWrist_ByAnkle.xlsx')
 
 wristhr = Objective4(activity_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Activity and Kappa Data/'
-                                         '4a_Activity_WristHR_ByAnkle_All.xlsx',
-                      kappa_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Activity and Kappa Data/'
-                                      '4b_Kappa_WristHR_ByAnkle_All.xlsx')
-
-# anklewrist.plot_interaction2()
-# wristhhr.plot_interaction2()
-
-anklewrist.plot_main_effects("MVPA")
+                                        '4a_Activity_WristHR_ByAnkle_All.xlsx',
+                     kappa_data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Activity and Kappa Data/'
+                                     '4b_Kappa_WristHR_ByAnkle_All.xlsx')
 
 
 def plot_both_samples_kappa():
@@ -605,6 +675,7 @@ def plot_both_samples_kappa():
 
     plt.subplot(1, 2, 1)
     anklewrist.plot_mains_effects_kappa()
+    plt.ylabel("Cohen's Kappa")
     plt.title("Ankle-Wrist Sample (n={}/group)".format(int(anklewrist.df_kappa.shape[0]/2)))
 
     plt.subplot(1, 2, 2)

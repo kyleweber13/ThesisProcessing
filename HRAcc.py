@@ -88,7 +88,8 @@ class HRAccModel:
                             "Vigorous": intensity.count(3) / (60 / self.hracc.epoch_len),
                             "Vigorous%": round(intensity.count(3) / n_valid_epochs, 3)}
 
-        print("\n" + "HEART RATE MODEL SUMMARY")
+        print("\n========================================== HR-ACCELEROMETER =========================================")
+        print("\n" + "HEART RATE-ACCELEROMETER MODEL SUMMARY")
         print("Sedentary: {} minutes ({}%)".format(intensity_totals["Sedentary"],
                                                    round(intensity_totals["Sedentary%"] * 100, 3)))
 
@@ -102,7 +103,7 @@ class HRAccModel:
                                                   round(intensity_totals["Vigorous%"] * 100, 3)))
 
         model_usage_dict = {"Ankle epochs": self.model_used.count("Ankle"),
-                            "Ankle %)": round(self.model_used.count("Ankle") / n_valid_epochs, 5),
+                            "Ankle %": round(self.model_used.count("Ankle") / n_valid_epochs, 5),
                             "HR epochs": self.model_used.count("HR"),
                             "HR %": round(self.model_used.count("HR") / n_valid_epochs, 5)}
 

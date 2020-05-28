@@ -37,12 +37,12 @@ class Objective2:
         self.load_data()
         self.calculate_cis()
         self.pairwise_ttests_paired()
-        self.pairwise_ttests_unpaired()
 
     def load_data(self):
 
         self.df = pd.read_excel(self.data_file, usecols=["ID", "Ankle-Wrist", "Wrist-HR", "Wrist-HRAcc",
-                                                         "Ankle-HR", "Ankle-HRAcc", "HR-HRAcc"])
+                                                         "Ankle-HR", "Ankle-HRAcc", "HR-HRAcc"],
+                                sheet_name="Data_WalkRun")
 
         self.corr_mat = self.df[["Ankle-Wrist", "Wrist-HR", "Wrist-HRAcc",
                                  "Ankle-HR", "Ankle-HRAcc", "HR-HRAcc"]].corr()
@@ -56,14 +56,6 @@ class Objective2:
         for col_name in self.df.keys():
             result = scipy.stats.shapiro(self.df[col_name].dropna())
             print(col_name, ":", "W =", round(result[0], 3), "p =", round(result[1], 3))
-
-    def pairwise_ttests_unpaired(self):
-
-        df = self.df.melt(id_vars="ID")
-
-        self.ttests_unpaired = pg.pairwise_ttests(dv="value", subject='ID',
-                                                  between='variable', data=df,
-                                                  padjust="bonf", effsize="hedges", parametric=True)
 
     def pairwise_ttests_paired(self):
 
@@ -134,12 +126,13 @@ class Objective2:
         plt.title("Objective #2: Cohen's Kappa by Model Comparison (Mean ± 95%CI) [n={}]".format(self.df.shape[0]))
         plt.bar([i for i in self.descriptive_stats_kappa.sort_values("Kappa_mean").index],
                 self.descriptive_stats_kappa.sort_values("Kappa_mean")["Kappa_mean"],
-                 yerr=self.kappa_cis["95%CI Width"], capsize=8, ecolor='black',
-                color='grey', edgecolor='black', linewidth=2)
+                yerr=self.kappa_cis["95%CI Width"], capsize=8, ecolor='black',
+                color=["purple", "blue", "green", "red", "darkorange", 'gold'],
+                edgecolor='black', linewidth=2, alpha=.65)
         plt.ylim(0, 1.1, .1)
         plt.ylabel("Cohen's Kappa")
+        plt.yticks(np.arange(0, 1.1, .1))
 
 
 x = Objective2(data_file='/Users/kyleweber/Desktop/Data/OND07/Processed Data/Activity and Kappa Data/'
                          '3b_Kappa_RepeatedParticipantsOnly.xlsx')
-

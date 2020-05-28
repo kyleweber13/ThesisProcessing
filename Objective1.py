@@ -43,7 +43,7 @@ class Objective1:
     def load_data(self):
 
         # Activity Minutes/Percent
-        df = pd.read_excel(self.activity_data_file)
+        df = pd.read_excel(self.activity_data_file, sheet_name="WalkRun")
 
         self.df_percent = df[["ID", 'Group', 'Model', 'Sedentary%', 'Light%', 'Moderate%', 'Vigorous%']]
 
@@ -106,6 +106,7 @@ class Objective1:
             by_model.boxplot(column=["Sedentary%", "Light%", "Moderate%", "Vigorous%", "MVPA%"])
 
     def perform_anova(self, intensity):
+
         self.aov = pg.rm_anova(data=self.df_percent, dv=intensity, within="Model", subject="ID", correction=True,
                                detailed=True)
         print(self.aov)
@@ -128,10 +129,10 @@ class Objective1:
         model_ci = self.df_ci["Sedentary"]
         plt.bar([i for i in model_means.index], [100 * i for i in model_means.values],
                 yerr=[i * 100 for i in model_ci], capsize=8, ecolor='black',
-                color=["White", "silver", "grey", "#404042"], edgecolor='black', linewidth=2)
+                color=["cornflowerblue", "silver", "grey", "#404042"], edgecolor='black', linewidth=2)
         plt.ylabel("% of Valid Data")
         plt.title("Sedentary")
-        plt.yticks(np.arange(0, 120, 20))
+        plt.yticks(np.arange(0, 140, 20))
 
         # LIGHT
         plt.subplot(1, 3, 2)
@@ -139,9 +140,10 @@ class Objective1:
         model_ci = self.df_ci["Light"]
         plt.bar([i for i in model_means.index], [100 * i for i in model_means.values],
                 yerr=[i * 100 for i in model_ci], capsize=8, ecolor='black',
-                color=["White", "silver", "grey", "#404042"], edgecolor='black', linewidth=2)
+                color=["cornflowerblue", "silver", "grey", "#404042"], edgecolor='black', linewidth=2)
         plt.ylabel(" ")
         plt.title("Light Activity")
+        plt.yticks(np.arange(0, 24, 2))
 
         # MVPA
         plt.subplot(1, 3, 3)
@@ -149,9 +151,10 @@ class Objective1:
         model_ci = self.df_ci["MVPA"]
         plt.bar([i for i in model_means.index], [100 * i for i in model_means.values],
                 yerr=[i * 100 for i in model_ci], capsize=8, ecolor='black',
-                color=["White", "silver", "grey", "#404042"], edgecolor='black', linewidth=2)
+                color=["cornflowerblue", "silver", "grey", "#404042"], edgecolor='black', linewidth=2)
         plt.ylabel(" ")
         plt.title("MVPA")
+        plt.yticks(np.arange(0, 14, 2))
 
     def calculate_cis(self):
 

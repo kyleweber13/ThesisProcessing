@@ -9,17 +9,24 @@ import numpy as np
 import scipy
 import os
 import seaborn as sns
-import researchpy as rp
 import pingouin as pg
+
 
 usable_subjs = LocateUsableParticipants.SubjectSubset(check_file="/Users/kyleweber/Desktop/Data/OND07/Tabular Data/"
                                                                  "OND07_ProcessingStatus.xlsx",
-                                                      wrist_ankle=False, wrist_hr=False,
+                                                      wrist_ankle=False, wrist_hr=True,
                                                       wrist_hracc=False, hr_hracc=False,
                                                       ankle_hr=False, ankle_hracc=False,
                                                       wrist_only=False, ankle_only=False,
                                                       hr_only=False, hracc_only=False,
-                                                      require_treadmill=True, require_all=True)
+                                                      require_treadmill=False, require_all=False)
+
+for subj in ["OND07_WTL_3002", "OND07_WTL_3012", "OND07_WTL_3018", "OND07_WTL_3019"]:
+    try:
+        usable_subjs.participant_list.remove(subj)
+        print("Removed {} from usable subjects list.".format(subj))
+    except ValueError:
+        pass
 
 
 def loop_subjects_standalone(subj_list):
@@ -324,7 +331,7 @@ class AnovaComparisonRegressionActivityMinutes:
 
 class AverageAnkleCountsStratify:
 
-    def __init__(self, subj_list=None, check_file=None, n_groups=4):
+    def __init__(self, subj_list=None, check_file=None, n_groups=2, sort_accel="ankle"):
         """Calculates average ankle counts during waking/worn hours and during waking/worn/valid ECG hours.
            Performs power analysis to determine attained statistical power in separating groups by ankle counts.
 
@@ -336,6 +343,7 @@ class AverageAnkleCountsStratify:
            -check_file: pathway to spreadsheet containing ID, ankle counts and wrist count data
            -n_groups: number of groups to generate. The top and bottom n_total/n_group participants are split into
                       low-active and high-active groups
+           -sort_accel: whether to create groups using ankle or wrist
         """
 
         self.check_file = check_file
@@ -347,6 +355,11 @@ class AverageAnkleCountsStratify:
         self.subj_list = subj_list
         self.n_groups = n_groups
         self.n_per_group = 1
+
+        if sort_accel == "ankle":
+            self.sort_accel = "Ankle Valid Counts"
+        if sort_accel == "wrist":
+            self.sort_accel = "Wrist Valid Counts"
 
         self.df = None  # Whole dataset
         self.low_active = None  # low activity group
@@ -372,10 +385,11 @@ class AverageAnkleCountsStratify:
         self.n_required = 0
         self.achieved_power = 0
 
-        if os.path.exists(self.check_file):
-            self.import_data()
+        if self.check_file is not None:
+            if os.path.exists(self.check_file):
+                self.import_data()
 
-        if not os.path.exists(self.check_file) or self.check_file is None:
+        if self.check_file is None:
             self.loop_participants(subj_list=subj_list)
 
         self.create_groups(n_groups=self.n_groups)
@@ -386,7 +400,8 @@ class AverageAnkleCountsStratify:
         """Imports data from Excel sheet."""
 
         self.df = pd.read_excel(io=self.check_file,
-                                columns=["Ankle Valid Counts", "Wrist Valid Counts", "Age", "Sex", "Weight", "Height"])
+                                columns=["Ankle Valid Counts", "Wrist Valid Counts", "Age",
+                                         "Sex", "Weight", "Height", "RestHR"])
 
         self.df["BMI"] = self.df["Weight"] / ((self.df["Height"] / 100) ** 2)
         self.df.dropna(inplace=True)
@@ -410,7 +425,7 @@ class AverageAnkleCountsStratify:
                         from_processed=True,
 
                         # Model parameters
-                        rest_hr_window=30,
+                        rest_hr_window=60,
                         n_epochs_rest_hr=30,
                         hracc_threshold=30,
                         filter_ecg=True,
@@ -459,19 +474,31 @@ class AverageAnkleCountsStratify:
                 pass
 
             self.df = pd.DataFrame(list(zip(self.ids, self.avg_counts_accels, self.avg_counts_validecg)),
-                                   columns=["ID", "All", "Valid ECG"])
+                                   columns=["ID", "Accel Only", "Valid ECG"])
 
     def create_groups(self, n_groups):
 
         self.n_per_group = int((self.df.shape[0] - self.df.shape[0] % n_groups) / n_groups)
 
-        sorted_by_anklecounts = self.df.sort_values(["Ankle Valid Counts"])
+        sorted_by_anklecounts = self.df.sort_values([self.sort_accel])
 
         self.low_active = sorted_by_anklecounts.iloc[0:self.n_per_group]
         self.high_active = sorted_by_anklecounts.iloc[-self.n_per_group:]
 
-        self.df = self.df.sort_values(["Ankle Valid Counts"])
-        self.df["Group"] = ["Low" for i in range(self.n_per_group)] + ["High" for i in range(self.n_per_group)]
+        self.df = self.df.sort_values([self.sort_accel])
+
+        print("\nCreated {} groups of {} subjects per group.".format(self.n_groups, self.n_per_group))
+
+        # If the median participant is included (n is even)
+        if self.df.shape[0] % 2 == 0:
+            self.df["Group"] = ["Low" for i in range(self.n_per_group)] + ["High" for i in range(self.n_per_group)]
+
+        # If the median participant is exlucluded (n is odd)
+        if self.df.shape[0] % 2 == 1:
+            self.df["Group"] = ["Low" for i in range(self.n_per_group)] + ["Excluded"] + \
+                               ["High" for i in range(self.n_per_group)]
+            print("Subject {} was excluded to keep group sizes equal since there is an odd number of participants."
+                  .format(self.df.groupby("Group").get_group("Excluded")["ID"].values[0]))
 
     def calculate_stats(self):
         """Pearson correlation between ankle and wrist counts, independent samples T-test, Wilcoxon signed rank test."""
@@ -481,20 +508,20 @@ class AverageAnkleCountsStratify:
         print("\nCorrelation (ankle ~ wrist counts): r = {}, p = {}".format(round(self.r[0], 3), round(self.r[1], 3)))
 
         # BETWEEN-GROUP COMPARISONS ----------------------------------------------------------------------------------
-        print("\n------------------------ Comparison between {} groups created using ankle counts"
-              "------------------------ ".format(self.n_groups))
+        print("\n------------------- Comparison between {} groups created using {}"
+              "------------------- ".format(self.n_groups, self.sort_accel))
 
         self.t_crit = scipy.stats.t.ppf(0.05, df=self.n_per_group*2-2)
 
         # Ankle counts
-        self.ttest_counts = scipy.stats.ttest_ind(self.low_active["Wrist Valid Counts"],
-                                                  self.high_active["Wrist Valid Counts"])
+        self.ttest_counts = scipy.stats.ttest_ind(self.low_active[self.sort_accel],
+                                                  self.high_active[self.sort_accel])
         print("Independent T-tests:")
         print("-Counts: t = {}, p = {}".format(round(self.ttest_counts[0], 3), round(self.ttest_counts[1], 3)))
 
         # Consider one-sided
-        self.wilcoxon_counts = scipy.stats.wilcoxon(self.low_active["Ankle Valid Counts"],
-                                                    self.high_active["Ankle Valid Counts"])
+        self.wilcoxon_counts = scipy.stats.wilcoxon(self.low_active[self.sort_accel],
+                                                    self.high_active[self.sort_accel])
 
         # Age
         self.ttest_age = scipy.stats.ttest_ind(self.low_active["Age"], self.high_active["Age"])
@@ -506,31 +533,31 @@ class AverageAnkleCountsStratify:
 
         # Height
         self.ttest_height = scipy.stats.ttest_ind(self.low_active["Height"], self.high_active["Height"])
-        print("-Height: t = {}, p = {}".format(round(self.ttest_height[0], 3), round(self.ttest_weight[1], 3)))
+        print("-Height: t = {}, p = {}".format(round(self.ttest_height[0], 3), round(self.ttest_height[1], 3)))
 
         self.ttest_bmi = scipy.stats.ttest_ind(self.low_active["BMI"], self.high_active["BMI"])
         print("-BMI: t = {}, p = {}".format(round(self.ttest_bmi[0], 3), round(self.ttest_bmi[1], 3)))
 
         # Sex
-        group1_n_females = [i for i in self.low_active["Sex"].values].count(1)
-        group2_n_females = [i for i in self.high_active["Sex"].values].count(1)
+        group1_n_females = [i for i in self.low_active["Sex"].values].count(0)
+        group2_n_females = [i for i in self.high_active["Sex"].values].count(0)
 
         print("\n-Females per group:")
         print("     -Low activity: {}".format(group1_n_females))
         print("     -High activity: {}".format(group2_n_females))
 
         # Effect size and statistical power ---------------------------------------------------------------------------
-        sd1 = self.low_active.describe().values[2][0]
-        mean1 = self.low_active.describe().values[1][0]
-        sd2 = self.high_active.describe().values[2][0]
-        mean2 = self.high_active.describe().values[1][0]
+        sd1 = self.low_active.describe()[self.sort_accel][2]
+        mean1 = self.low_active.describe()[self.sort_accel][1]
+        sd2 = self.high_active.describe()[self.sort_accel][2]
+        mean2 = self.high_active.describe()[self.sort_accel][1]
 
         pooled_sd = ((sd1 ** 2 + sd2 ** 2) / 2) ** (1 / 2)
 
         self.cohens_d = round((mean2 - mean1) / pooled_sd, 3)
 
         print("\nPOWER ANALYSIS")
-        print("\n-Effect size between average ankle counts: d = {}".format(self.cohens_d))
+        print("\n-Effect size between average counts: d = {}".format(self.cohens_d))
 
         # Statistical power -------------------------------------------------------------------------------------------
         self.power_object = smp.TTestIndPower()
@@ -561,10 +588,10 @@ class AverageAnkleCountsStratify:
         plt.subplots(2, 2, figsize=(10, 7))
 
         plt.subplot(2, 2, 1)
-        plt.boxplot(x=[self.low_active["Ankle Valid Counts"], self.high_active["Ankle Valid Counts"]],
+        plt.boxplot(x=[self.low_active[self.sort_accel], self.high_active[self.sort_accel]],
                     labels=["Low activity", "High activity"])
-        plt.ylabel("Average Ankle Counts")
-        plt.title("Ankle Counts")
+        plt.ylabel("Average Counts")
+        plt.title("Counts")
 
         plt.subplot(2, 2, 2)
         plt.boxplot(x=[self.low_active["Age"], self.high_active["Age"]], labels=["Low activity", "High activity"])
@@ -586,10 +613,26 @@ class AverageAnkleCountsStratify:
         self.high_active_ids = self.df.loc[self.df["Group"] == "High"]["ID"].values
         self.low_active_ids = self.df.loc[self.df["Group"] == "Low"]["ID"].values
 
+    def plot_density(self):
 
-"""z = AverageAnkleCountsStratify(subj_list=usable_subjs.participant_list,
+        sorted_values = self.df.sort_values([self.sort_accel])[self.sort_accel]
+        pseudo_cutoff = (sorted_values.iloc[self.n_per_group-1] + sorted_values.iloc[-self.n_per_group]) / 2
+
+        plt.title("{}: Density Plot".format(self.sort_accel))
+        sns.distplot(self.df[self.sort_accel], hist=True,
+                     bins=np.arange(min(sorted_values), max(sorted_values), 15), kde=True, color='red',
+                     hist_kws={'edgecolor': 'black'}, kde_kws={'linewidth': 2})
+        plt.axvline(x=pseudo_cutoff, color='black', linestyle='dashed',
+                    label="Pseudo-cutoff ({} counts)".format(round(pseudo_cutoff, 3)))
+        plt.xlabel("Counts")
+        plt.ylabel("Density")
+        plt.legend()
+
+
+x = AverageAnkleCountsStratify(subj_list=usable_subjs.participant_list,
                                check_file="/Users/kyleweber/Desktop/Data/OND07/Processed Data/"
-                                          "ECGValidity_AccelCounts_All.xlsx", n_groups=2)"""
+                                          "AverageAccelCounts_NoECG_AllParticipants.xlsx", n_groups=2,
+                               sort_accel="ankle")
 
 
 class AverageAnkleCountsValidInvalid:
@@ -865,4 +908,3 @@ class RelativeActivityEffectDiff:
 
 # x = RelativeActivityEffectDiff('/Users/kyleweber/Desktop/Data/OND07/Processed Data/'
 #                               'Activity Level Comparison/ActivityGroupData_Differences.xlsx')
-# x.norm_df_intensity["GROUP"] = x.df["GROUP"].values

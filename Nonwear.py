@@ -1,105 +1,10 @@
-# Adapted from Adam Vert
+# Zhou script adapted from Adam Vert
 
 import pyedflib
 import os
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
 import numpy as np
 import pandas as pd
 import datetime as dt
-from scipy import signal
-import ImportEDF
-
-
-class Nonwear:
-
-    def __init__(self, accel_object=None):
-        """
-        Note that we are using a forward moving window of 4s since that is how often we get temperature results. The
-        original study by Zhou used 1s
-        """
-
-        self.load_raw = accel_object.load_raw
-        self.accel = accel_object.raw
-        self.temperature = accel_object.temperature
-
-        if not self.load_raw:
-            print("\n" + "No raw data available. Skipping non-wear processing.")
-            self.status = None
-        if self.load_raw:
-            print("\n" + "Running Zhou non-wear algorithm...")
-            self.data = self.zhou_nonwear()
-            self.status = self.data["Wear Status"]
-            self.timestamps = self.data["End Time"]
-
-    def zhou_nonwear(self):
-
-        temp_thresh = 26
-        window_size = 60  # in seconds
-
-        pd.set_option('mode.chained_assignment', None)
-
-        zhou_df = pd.DataFrame({"Temperature Timestamps": self.temperature.timestamps,
-                                "Raw Temperature Values": self.temperature.temperature})
-
-        # Temperature data --------------------------------------------------------------------------------------------
-
-        # Sliding window: average temperature over 60 * self.temperature.sample_rate seconds
-        temperature_moving_average = pd.Series(self.temperature.temperature).rolling(
-            window=int(60 * self.temperature.sample_rate)).mean()
-
-        t0 = 26
-
-        # Accelerometer data -----------------------------------------------------------------------------------------
-
-        # Raw accel dataframe
-        zhou_accelerometer_df = pd.DataFrame({"X": self.accel.x, "Y": self.accel.y, "Z": self.accel.z},
-                                             index=self.accel.timestamps)
-
-        # Rolling average accelerometer standard deviation
-        zhou_accelerometer_rolling_std = zhou_accelerometer_df.rolling(window=int(60 * self.accel.sample_rate)).std()
-
-        # Takes one row from data every 4 seconds
-        binned_4s_df = zhou_accelerometer_rolling_std.iloc[::int(4 * self.accel.sample_rate), :]
-
-        # Combined data ----------------------------------------------------------------------------------------------
-        temp_moving_average_list = list(temperature_moving_average.values)
-
-        if len(temp_moving_average_list) - len(binned_4s_df) > 0:
-            temp_moving_average_list = temp_moving_average_list[:len(binned_4s_df) - len(temp_moving_average_list)]
-
-        binned_4s_df["Temperature Moving Average"] = temp_moving_average_list
-
-        # Algorithm --------------------------------------------------------------------------------------------------
-
-        worn = []
-        end_times = []
-        for index, row in binned_4s_df.iterrows():
-
-            # Timestamp generation
-            end_times.append(index + dt.timedelta(seconds=4))
-
-            if (row["Temperature Moving Average"] < t0) and (((row["X"] + row["Y"] + row["Z"]) / 3) < 0.013):
-                worn.append(False)
-            elif row["Temperature Moving Average"] >= t0:
-                worn.append(True)
-            else:
-                earlier_window_temp = binned_4s_df["Temperature Moving Average"].shift(15).loc[index]
-                if row["Temperature Moving Average"] > earlier_window_temp:
-                    worn.append(True)
-                elif row["Temperature Moving Average"] < earlier_window_temp:
-                    worn.append(False)
-                elif row["Temperature Moving Average"] == earlier_window_temp:
-                    worn.append(worn[-1])
-                else:
-                    worn.append(True)
-
-        binned_4s_df["Wear Status"] = worn
-        binned_4s_df["End Time"] = end_times
-
-        final_df = binned_4s_df[['End Time', 'Wear Status']].copy()
-
-        return final_df
 
 
 class NonwearLog:
@@ -117,11 +22,7 @@ class NonwearLog:
         self.file_loc = subject_object.nonwear_file
         self.status = []
         self.nonwear_log = None
-
-        self.nonwear_dict = {"Minutes": 0, "Average Duration (Mins)": 0, "Percent of Time": 0}
-        self.nonwear_minutes = 0
-        self.avg_nonwear_duration = 0
-        self.nonwear_percent = 0
+        self.nonwear_dict = {"Minutes": 0, "Number of Removals": 0, "Average Duration (Mins)": 0, "Percent": 0}
 
         self.prep_data()
         self.import_nonwearlog()
@@ -165,8 +66,14 @@ class NonwearLog:
 
             self.nonwear_log["PERIOD DURATION"] = nonwear_durs
 
+            self.nonwear_log["PERIOD DURATION (MINS)"] = \
+                [self.nonwear_log.iloc[i]["PERIOD DURATION"].total_seconds()/60
+                 for i in range(self.nonwear_log.shape[0])]
+
             self.nonwear_dict["Average Duration (Mins)"] = round(self.nonwear_log.describe()
                                                                  ["PERIOD DURATION"]['mean'].total_seconds() / 60, 1)
+
+            self.nonwear_dict["Number of Removals"] = self.nonwear_log.shape[0]
 
             print("\nNon-wear log data imported. Found {} removals.".format(self.nonwear_log.shape[0]))
 
@@ -198,8 +105,9 @@ class NonwearLog:
         self.status = epoch_list
 
         self.nonwear_dict["Minutes"] = (np.count_nonzero(self.status)) / (60 / self.subject_object.epoch_len)
-        self.nonwear_dict["Percent"] = round(self.nonwear_dict["Minutes"] * (60 / self.subject_object.epoch_len) / \
-                                             len(self.status), 4)
+        self.nonwear_dict["Percent"] = round(100 * self.nonwear_dict["Minutes"] *
+                                             (60 / self.subject_object.epoch_len) /
+                                             len(self.status), 2)
 
         print("Complete. Found {} hours, {} minutes of "
               "non-wear time.".format(np.floor(self.nonwear_dict["Minutes"]/60), self.nonwear_dict["Minutes"] % 60))

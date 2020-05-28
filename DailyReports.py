@@ -154,6 +154,8 @@ class DailyReport:
 
             # HR data: max, mean, resting
             non_zero_hr = [i for i in self.hr[start:end] if i > 0]
+            if len(non_zero_hr) == 0:
+                non_zero_hr = [1]
 
             if self.process_sleep:
                 awake_hr = [value for i, value in enumerate(self.hr[start:end])
@@ -223,6 +225,8 @@ class DailyReport:
 
             # HR data: max, mean, resting
             non_zero_hr = [i for i in self.hr[start:end] if i > 0]
+            if len(non_zero_hr) == 0:
+                non_zero_hr = [1]
 
             if self.process_sleep:
                 awake_hr = [value for i, value in enumerate(self.hr[start:end])
