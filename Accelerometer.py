@@ -12,6 +12,7 @@ import statistics as stats
 from sklearn import linear_model
 from sklearn.preprocessing import PolynomialFeatures
 import math
+import pandas as pd
 
 
 # ====================================================================================================================
@@ -433,7 +434,7 @@ class Treadmill:
 
         return treadmill_dict, walk_speeds, walk_indexes
 
-    def plot_treadmill_protocol(self, ankle_object):
+    def plot_treadmill_protocol(self, ankle_object, show_highlights=True):
         """Plots raw and epoched data during treadmill protocol on subplots or
            just epoched data if raw not available."""
 
@@ -463,27 +464,38 @@ class Treadmill:
             index_list = np.arange(raw_start, raw_start + 4800 * ankle_object.raw.sample_rate) / \
                          ankle_object.raw.sample_rate / ankle_object.epoch_len
 
-            fig, (ax1, ax2) = plt.subplots(2, sharex="col", figsize=(10, 7))
+            fig, (ax1, ax2, ax3) = plt.subplots(3, sharex="col", figsize=(10, 7))
 
             ax1.set_title("{}: Treadmill Protocol".format(ankle_object.filename))
 
             # Plots one hour of raw data (3600 seconds)
             ax1.plot(index_list, ankle_object.raw.x[raw_start:raw_start + ankle_object.raw.sample_rate * 4800],
-                     color="black")
+                     color="black", label="X")
+            ax1.plot(index_list, ankle_object.raw.y[raw_start:raw_start + ankle_object.raw.sample_rate * 4800],
+                     color="green", label="Y")
+            ax1.plot(index_list, ankle_object.raw.z[raw_start:raw_start + ankle_object.raw.sample_rate * 4800],
+                     color="red", label="Z")
+            ax1.legend()
             ax1.set_ylabel("G's")
 
+            ax2.plot(index_list, ankle_object.raw.vm[raw_start:raw_start + ankle_object.raw.sample_rate * 4800],
+                     color="blue", label="Vector Mag.")
+            ax2.legend()
+            ax2.set_ylabel("G's")
+
             # Epoched data
-            ax2.bar(index_list[::ankle_object.epoch_len * ankle_object.raw.sample_rate],
+            ax3.bar(index_list[::ankle_object.epoch_len * ankle_object.raw.sample_rate],
                     ankle_object.epoch.svm[epoch_start:epoch_start + int(4800 / ankle_object.epoch_len)],
                     width=1.0, edgecolor='black', color='grey', alpha=0.75, align="edge")
-            ax2.set_ylabel("Counts")
+            ax3.set_ylabel("Counts")
 
             # Highlights treadmill walks
-            for start, stop in zip(self.walk_indexes[::2], self.walk_indexes[1::2]):
-                ax2.fill_betweenx(y=(0, max(ankle_object.epoch.svm[self.walk_indexes[0]-10:
-                                                                   self.walk_indexes[0] +
-                                                                   int(4800 / ankle_object.epoch_len)])),
-                                  x1=start, x2=stop, color='green', alpha=0.35)
+            if show_highlights:
+                for start, stop in zip(self.walk_indexes[::2], self.walk_indexes[1::2]):
+                    ax1.fill_betweenx(y=(0, max(ankle_object.epoch.svm[self.walk_indexes[0]-10:
+                                                                       self.walk_indexes[0] +
+                                                                       int(4800 / ankle_object.epoch_len)])),
+                                      x1=start, x2=stop, color='green', alpha=0.35)
 
             plt.show()
 
@@ -557,6 +569,9 @@ class AnkleModel:
         self.ind_regression_line = None
         self.group_regression_line = None
 
+        self.regression_df = None
+        self.standard_error = None
+
         if ecg_object is not None:
             self.valid_ecg = ecg_object.epoch_validity
         if ecg_object is None:
@@ -581,7 +596,7 @@ class AnkleModel:
             self.log_dict, self.log_speed = None, None
 
             self.predicted_mets, self.epoch_intensity, \
-                self.intensity_totals = self.calculate_intensity(self.linear_speed)
+                self.intensity_totals = self.calculate_intensity_walkrun(self.linear_speed)
 
             # Group regression ----------------------------------------------------------------------------------------
             self.linear_speed_group, self.group_regression_line = self.calculate_group_regression()
@@ -702,11 +717,35 @@ class AnkleModel:
 
         return linear_reg_dict, above_sed_thresh, ind_regression_line
 
-    def counts_to_speed(self, count):
+    def counts_to_speed(self, count, print_output=True):
 
         speed = self.linear_dict["a"] * count + self.linear_dict["b"]
 
-        print("-Predicted speed for {} counts is {} m/s.".format(count, round(speed, 3)))
+        if print_output:
+            print("-Predicted speed for {} counts is {} m/s.".format(count, round(speed, 3)))
+
+        return speed
+
+    def calculate_standard_error(self):
+
+        walk_counts = self.tm_object.avg_walk_counts
+        true_speeds = self.tm_object.walk_speeds
+
+        # Calculates predicted speed for each walk based on counts
+        pred_speeds = []
+        for walk_count in walk_counts:
+            pred = self.counts_to_speed(count=walk_count, print_output=False)
+            pred_speeds.append(pred)
+
+        id_list = [self.subjectID for i in range(5)]
+        difference = [pred - true for pred, true in zip(pred_speeds, true_speeds)]
+
+        self.regression_df = pd.DataFrame(list(zip(id_list, true_speeds, pred_speeds, difference)),
+                                          columns=["ID", "True", "Pred", "Diff"])
+
+        self.regression_df["Diff^2"] = self.regression_df["Diff"]**2
+
+        self.standard_error = np.sqrt(self.regression_df["Diff^2"].sum() / self.regression_df.shape[0])
 
     def calculate_quad_regression(self):
 
@@ -870,6 +909,59 @@ class AnkleModel:
 
         # Uses ACSM equation to predict METs from predicted gait speed
         mets = [((self.rvo2 + 0.1 * epoch_speed) / self.rvo2) for epoch_speed in m_min]
+
+        # Calculates epoch-by-epoch intensity
+        # <1.5 METs = sedentary, 1.5-2.99 METs = light, 3.00-5.99 METs = moderate, >= 6.0 METS = vigorous
+        intensity = []
+
+        for met in mets:
+            if met < 1.5:
+                intensity.append(0)
+            if 1.5 <= met < 3.0:
+                intensity.append(1)
+            if 3.0 <= met < 6.0:
+                intensity.append(2)
+            if met >= 6.0:
+                intensity.append(3)
+
+        # Calculates time spent in each intensity category
+        intensity_totals = {"Sedentary": intensity.count(0) / (60 / self.epoch_len),
+                            "Sedentary%": round(intensity.count(0) / len(self.epoch_data), 3),
+                            "Light": intensity.count(1) / (60 / self.epoch_len),
+                            "Light%": round(intensity.count(1) / len(self.epoch_data), 3),
+                            "Moderate": intensity.count(2) / (60 / self.epoch_len),
+                            "Moderate%": round(intensity.count(2) / len(self.epoch_data), 3),
+                            "Vigorous": intensity.count(3) / (60 / self.epoch_len),
+                            "Vigorous%": round(intensity.count(3) / len(self.epoch_data), 3)}
+
+        print("\n" + "ANKLE MODEL SUMMARY")
+        print("Sedentary: {} minutes ({}%)".format(intensity_totals["Sedentary"],
+                                                   round(intensity_totals["Sedentary%"] * 100, 3)))
+
+        print("Light: {} minutes ({}%)".format(intensity_totals["Light"],
+                                               round(intensity_totals["Light%"] * 100, 3)))
+
+        print("Moderate: {} minutes ({}%)".format(intensity_totals["Moderate"],
+                                                  round(intensity_totals["Moderate%"] * 100, 3)))
+
+        print("Vigorous: {} minutes ({}%)".format(intensity_totals["Vigorous"],
+                                                  round(intensity_totals["Vigorous%"] * 100, 3)))
+
+        return mets, intensity, intensity_totals
+
+    def calculate_intensity_walkrun(self, predicted_speed):
+
+        # Converts m/s to m/min
+        m_min = [i * 60 for i in predicted_speed]
+
+        # Uses ACSM equation to predict METs from predicted gait speed
+        mets = []
+
+        for epoch_speed in m_min:
+            if epoch_speed <= 100:
+                mets.append((self.rvo2 + .1 * epoch_speed) / self.rvo2)
+            if epoch_speed > 100:
+                mets.append((self.rvo2 + .2 * epoch_speed) / self.rvo2)
 
         # Calculates epoch-by-epoch intensity
         # <1.5 METs = sedentary, 1.5-2.99 METs = light, 3.00-5.99 METs = moderate, >= 6.0 METS = vigorous
