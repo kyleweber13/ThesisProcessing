@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
 import scipy.stats
 
 tm_file = "/Users/kyleweber/Desktop/Data/OND07/Processed Data/Treadmill/TreadmillRegression_Individual.xlsx"
@@ -247,4 +246,37 @@ class Treadmill:
 
 x = Treadmill(tm_file)
 
-x.plot_all_data()
+
+def plot_gait_stuff():
+
+    w_speeds = np.arange(50, 100, 1)
+    r_speeds = np.arange(100, 250, 1)
+
+    w_vo2 = [(0.1 * s + 3.5) / 3.5 for s in w_speeds]
+    r_vo2 = [(0.2 * s + 3.5) / 3.5 for s in r_speeds]
+
+    plt.axhline(y=0, color='black')
+    plt.plot([i / 60 for i in w_speeds], w_vo2, color='blue')
+    plt.plot([i / 60 for i in r_speeds], r_vo2, color='red')
+    plt.axvline(x=100 / 60, linestyle='dashed', color='red', label="Walk-Run Equation Use")
+    plt.fill_betweenx(x1=50 / 60, x2=100 / 60, color='blue', y=(1, max(w_vo2)), alpha=.6,
+                      label="Walk Equation Accurate (ACSM)")
+    plt.fill_betweenx(x1=135 / 60, x2=4, color='red', y=(max(w_vo2), max(r_vo2)), alpha=.6,
+                      label="Run Equation Accurate (ACSM)")
+
+    plt.fill_betweenx(x1=2.16, x2=2.24, color='green', y=(-5, max(r_vo2)), alpha=.4,
+                      label="Walk-Run Transition (Hansen 2017)")
+
+    plt.fill_between(x=np.arange(1.666, 2.25, .01), y1=max(w_vo2), y2=max(r_vo2), color='grey', alpha=.6,
+                     label="Questionable Zone")
+
+    plt.fill_betweenx(x1=1, x2=1.67, color='orange', y=(-2.5, 0), alpha=.4, label="Normal Walk Speed (Waters 1999)")
+    plt.fill_betweenx(x1=0.5, x2=2.1, color='purple', y=(-5, -2.5), alpha=.4, label="Cadence is linear (Latt 2008)")
+
+    plt.legend(loc='lower right')
+    plt.xlabel("Speed (m/s)")
+    plt.ylabel("METs")
+    plt.title("Discussion Things for Thesis")
+
+
+plot_gait_stuff()
