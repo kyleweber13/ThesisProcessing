@@ -8,6 +8,9 @@ import scipy.stats as stats
 import progressbar
 from random import randint
 from scipy.signal import butter, lfilter, filtfilt
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+import random
 
 
 class Bittium:
@@ -205,7 +208,7 @@ class ECG:
 
         if self.load_accel:
             self.epoch_accel()
-
+        """
         self.epoch_validity, self.epoch_hr, self.avg_voltage = self.check_quality()
 
         # List of epoched heart rates but any invalid epoch is marked as None instead of 0 (as is self.epoch_hr)
@@ -213,7 +216,7 @@ class ECG:
 
         self.quality_report = self.generate_quality_report(write_report=self.write_data)
         print(self.quality_report)
-
+        """
         if self.write_data:
             df = pd.DataFrame(list(zip(self.epoch_timestamps,
                                        ["Invalid" if i == 1 else "Valid" for i in self.epoch_validity])),
@@ -306,7 +309,7 @@ class CheckQuality:
        19(3). 832-838.
     """
 
-    def __init__(self, ecg_object, start_index, voltage_thresh=250, epoch_len=15):
+    def __init__(self, ecg_object, start_index=None, voltage_thresh=250, epoch_len=15, show_plot=False):
         """Initialization method.
 
         :param
@@ -315,12 +318,17 @@ class CheckQuality:
                       Takes priority over start_index.
         -start_index: index for windowing data; 0 by default
         -epoch_len: window length in seconds over which algorithm is run; 15 seconds by default
+        -show_plot: boolean; shows plot of data window with peaks, shaded beat windows, and template
         """
 
         self.voltage_thresh = voltage_thresh
         self.epoch_len = epoch_len
         self.fs = ecg_object.sample_rate
         self.start_index = start_index
+
+        if self.start_index is None:
+            print("\nRunning algorithm on random section of data.")
+            self.start_index = randint(0, len(ecg_object.raw) - self.fs * self.epoch_len)
 
         self.raw_data = ecg_object.raw[self.start_index:self.start_index+self.epoch_len*self.fs]
         self.filt_data = ecg_object.filtered[self.start_index:self.start_index+self.epoch_len*self.fs]
@@ -370,6 +378,9 @@ class CheckQuality:
             self.adaptive_filter()
             self.calculate_correlation()
             self.apply_rules()
+
+        if show_plot:
+            self.plot_window()
 
     def prep_data(self):
         """Function that:
@@ -549,8 +560,63 @@ class CheckQuality:
                                 "Voltage Range Valid": self.valid_range, "Voltage Range": round(self.volt_range, 1),
                                 "Correlation Valid": self.valid_corr, "Correlation": self.average_r}
 
+    def plot_window(self):
+
+        plt.close("all")
+
+        fig, (ax1, ax2) = plt.subplots(2, figsize=(10, 6))
+        plt.subplots_adjust(hspace=.3)
+
+        # Filtered data
+        ax1.plot(np.arange(0, self.epoch_len, 1 / self.fs), self.filt_data, color='black')
+        ax1.set_title("Filtered ECG data with peaks (i = {})".format(self.start_index))
+
+        # Marks max value of filt_data within 100ms of detected peak location
+        ax1.plot(self.r_peaks / self.fs,
+                 [max(self.filt_data[int(i - self.fs / 10):int(i + self.fs / 10)]) for i in self.r_peaks],
+                 markeredgecolor='black', color='red', marker="v", linestyle="")
+
+        # Highlights windows of data
+        for peak_ind, peak in enumerate(self.r_peaks):
+            if peak_ind % 2 == 0:
+                window_color = 'grey'
+            if peak_ind % 2 != 0:
+                window_color = "lightgrey"
+
+            # Shades data windows
+            if peak - self.median_rr / 2 > 0 and peak + self.median_rr / 2 < 10 * self.fs:
+                ax1.fill_betweenx(y=(min(self.filt_data)*1.1, max(self.filt_data)*1.1),
+                                  x1=(peak - self.median_rr / 2) / self.fs,
+                                  x2=(peak + self.median_rr / 2) / self.fs,
+                                  color=window_color)
+
+        ax1.set_xticks(np.arange(0, self.epoch_len, 1))
+
+        ax1.set_ylabel("Voltage (μV)")
+
+        # All beat windows
+        for window in range(0, len(self.ecg_windowed)):
+            ax2.plot(np.arange(0, len(self.ecg_windowed[window])) / self.fs, self.ecg_windowed[window],
+                     color='black')
+
+        # Beat template
+        ax2.plot(np.arange(0, len(self.average_qrs)) / self.fs, self.average_qrs,
+                 color='red', linestyle='dashed', label="Template (r = {})".format(self.average_r), linewidth=2)
+
+        ax2.legend()
+        ax2.set_xticks(np.arange(0, max([len(self.ecg_windowed[i])/self.fs for
+                                         i in range(0, len(self.ecg_windowed))]), .1))
+        ax2.set_xlabel("Seconds")
+        ax2.set_ylabel("Voltage (μV)")
+
+        ax2.set_title("Individual beats with template shown in red")
+
+
 """
-ecg = ECG(filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3028_01_BF.EDF",
-          output_dir="/Users/kyleweber/Desktop/", epoch_len=15, load_accel=False, write_data=True,
+ecg = ECG(filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3043_01_BF.EDF",
+          output_dir="/Users/kyleweber/Desktop/", epoch_len=15, load_accel=False, write_data=False,
           filter_data=True, low_f=1, high_f=30, f_type="bandpass")
 """
+
+# Individual data region. If start_index is None, generates random segment
+# data = CheckQuality(ecg_object=ecg, start_index=None, voltage_thresh=250, epoch_len=10, show_plot=True)
