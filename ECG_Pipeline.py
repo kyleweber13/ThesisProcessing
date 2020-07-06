@@ -9,6 +9,7 @@ import progressbar
 from random import randint
 from scipy.signal import butter, lfilter, filtfilt
 import matplotlib.pyplot as plt
+import pingouin as pg
 
 
 # Class that reads in and filters Bittium data =======================================================================
@@ -329,8 +330,8 @@ class ECG:
         perc_invalid = round(invalid_epochs / len(self.epoch_validity) * 100, 1)  # percent of invalid data
 
         # Average Bittium accelerometer counts during invalid, valid, and non-wear epochs ----------------------------
-        df_valid = self.output_df.groupby("Valid").get_group("Valid")
-        df_invalid = self.output_df.groupby("Valid").get_group("Invalid")
+        df_valid = ecg.output_df.groupby("Valid").get_group("Valid")
+        df_invalid = ecg.output_df.groupby("Valid").get_group("Invalid")
         df_invalid = df_invalid.loc[df_invalid["Wear"] == "Wear"]
         df_nonwear = self.output_df.groupby("Wear").get_group("Nonwear")
 
@@ -339,16 +340,28 @@ class ECG:
             invalid_counts = df_invalid.describe()["AccelCounts"]['mean']
             nonwear_counts = df_nonwear.describe()["AccelCounts"]['mean']
 
+            ttest = pg.ttest(df_valid["AccelCounts"], df_invalid["AccelCounts"], paired=False)
+            print("\nUnpaired T-test results: valid vs. invalid ECG epochs' activity counts:")
+            print("t({}) = {}, p = {}, Cohen's d = {}.".format(round(ttest["dof"].iloc[0], 1),
+                                                               round(ttest["T"].iloc[0], 2),
+                                                               round(ttest["p-val"].iloc[0], 3),
+                                                               round(ttest["cohen-d"].iloc[0], 3)))
+            t = round(ttest["T"].iloc[0], 3)
+            p = round(ttest["p-val"].iloc[0], 5)
+
         if not self.load_accel:
             invalid_counts = 0
             valid_counts = 0
             nonwear_counts = 0
+            t = 0
+            p = 0
 
         quality_report = {"Invalid epochs": invalid_epochs, "Hours lost": hours_lost,
                           "Percent valid": perc_valid, "Percent invalid": perc_invalid,
                           "Valid counts": round(valid_counts, 1),
                           "Invalid counts": round(invalid_counts, 1),
-                          "Nonwear counts": round(nonwear_counts, 1)}
+                          "Nonwear counts": round(nonwear_counts, 1),
+                          "Counts T": t, "Counts p": p}
 
         print("{}% of the data is valid.".format(round(100 - perc_invalid), 3))
 
