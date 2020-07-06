@@ -330,8 +330,8 @@ class ECG:
         perc_invalid = round(invalid_epochs / len(self.epoch_validity) * 100, 1)  # percent of invalid data
 
         # Average Bittium accelerometer counts during invalid, valid, and non-wear epochs ----------------------------
-        df_valid = ecg.output_df.groupby("Valid").get_group("Valid")
-        df_invalid = ecg.output_df.groupby("Valid").get_group("Invalid")
+        df_valid = self.output_df.groupby("Valid").get_group("Valid")
+        df_invalid = self.output_df.groupby("Valid").get_group("Invalid")
         df_invalid = df_invalid.loc[df_invalid["Wear"] == "Wear"]
         df_nonwear = self.output_df.groupby("Wear").get_group("Nonwear")
 
