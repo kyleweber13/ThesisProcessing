@@ -9,10 +9,10 @@ import progressbar
 from random import randint
 from scipy.signal import butter, lfilter, filtfilt
 import matplotlib.pyplot as plt
-import matplotlib as mpl
-import random
 
 
+# Class that reads in and filters Bittium data =======================================================================
+# Called in ECG class
 class Bittium:
 
     def __init__(self, filepath, epoch_len=15, load_accel=False,
@@ -142,6 +142,7 @@ class Bittium:
         return filtered_data
 
 
+# Class to process ECG data ==========================================================================================
 class ECG:
 
     def __init__(self, filepath=None, output_dir=None, epoch_len=15, load_accel=False, write_data=True,
@@ -153,7 +154,7 @@ class ECG:
             -output_dir: full pathway to where you want data to be saved
             -epoch_len: window length (number of seconds) over which quality check algorithm is run
             -load_accel: boolean of whether to load accelerometer channels (not needed for quality check)
-            -write_data: boolean of whether to write epoch-by-epoch validity results to .csv in output_dir
+            -write_data: boolean of whether to write results to three .csv's in output_dir
 
             -filter_data: boolean
             -low_f: low-end cutoff frequency for lowpass or bandpass filters
@@ -166,6 +167,7 @@ class ECG:
         print()
         print("============================================= ECG DATA ==============================================")
 
+        # Parameters
         self.filepath = filepath
         self.filename = self.filepath.split("/")[-1].split(".")[0]
         self.subjectID = self.filename.split("_")[2]
@@ -181,8 +183,7 @@ class ECG:
         self.f_order = f_order
 
         # Accelerometer details
-        self.load_accel = load_accel
-
+        self.load_accel = load_accel  # load/not load accelerometer
         self.accel_sample_rate = 1
         self.accel_x = None
         self.accel_y = None
@@ -190,7 +191,7 @@ class ECG:
         self.accel_vm = None
         self.svm = []
 
-        # Raw data
+        # Reads in raw data
         self.ecg = Bittium(filepath=self.filepath, load_accel=self.load_accel,
                            filter_data=self.filter_data, low_f=self.low_f, high_f=self.high_f,
                            f_type=self.f_type, f_order=self.f_order)
@@ -203,28 +204,31 @@ class ECG:
         self.epoch_timestamps = self.ecg.epoch_timestamps
 
         self.accel_x, self.accel_y, self.accel_z, self.accel_vm = self.ecg.x, self.ecg.y, self.ecg.z, self.ecg.vm
-
         del self.ecg
 
+        # Epochs accelometer data
         if self.load_accel:
             self.epoch_accel()
-        """
-        self.epoch_validity, self.epoch_hr, self.avg_voltage = self.check_quality()
 
-        # List of epoched heart rates but any invalid epoch is marked as None instead of 0 (as is self.epoch_hr)
-        self.valid_hr = [self.epoch_hr[i] if self.epoch_validity[i] == 0 else None for i in range(len(self.epoch_hr))]
+        # Runs quality check algorithm on entire file. Returns lists:
+        # self.epoch_validity: 1 = invalid, 0 = valid
+        # self.epoch_hr: average HR during epoch. Value of 0 means invalid epoch
+        # self.avg_voltage: average voltage
+        # self.beattimestamps: timestamp of each beat in valid epochs
+        self.epoch_validity, self.epoch_hr, self.volt_range, self.beat_timestamps = self.check_quality()
 
+        # Epoch-by-epoch timestamps, HR, validity, accel counts, nonwear status
+        self.output_df = self.generate_output_df(write_output=write_data)
+
+        if self.write_data:
+            self.write_beatstamps()
+
+        # Summary measures
         self.quality_report = self.generate_quality_report(write_report=self.write_data)
         print(self.quality_report)
-        """
-        if self.write_data:
-            df = pd.DataFrame(list(zip(self.epoch_timestamps,
-                                       ["Invalid" if i == 1 else "Valid" for i in self.epoch_validity])),
-                              columns=["Timestamp", "Validity"])
-
-            df.to_csv(path_or_buf=self.output_dir + self.filename + "_EpochValidity.csv", sep=",")
 
     def epoch_accel(self):
+        """Epochs accelerometer data by calcualting gravity subtracted sum of vector magnitudes."""
 
         for i in range(0, len(self.accel_vm), int(self.accel_sample_rate * self.epoch_len)):
 
@@ -248,7 +252,8 @@ class ECG:
 
         validity_list = []
         epoch_hr = []
-        avg_voltage = []
+        volt_range = []
+        beat_timestamps = []
 
         bar = progressbar.ProgressBar(maxval=len(self.raw),
                                       widgets=[progressbar.Bar('>', '', '|'), ' ',
@@ -260,11 +265,15 @@ class ECG:
 
             qc = CheckQuality(ecg_object=self, start_index=start_index, epoch_len=self.epoch_len)
 
-            avg_voltage.append(qc.volt_range)
+            volt_range.append(qc.volt_range)
 
             if qc.valid_period:
                 validity_list.append(0)
                 epoch_hr.append(round(qc.hr, 2))
+                for beat in [datetime.strptime(str(self.timestamps[i])[:-3], "%Y-%m-%dT%H:%M:%S.%f") for
+                             i in qc.output_r_peaks]:
+                    beat_timestamps.append(beat)
+
             if not qc.valid_period:
                 validity_list.append(1)
                 epoch_hr.append(0)
@@ -275,7 +284,40 @@ class ECG:
         proc_time = (t1 - t0).seconds
         print("\n" + "Quality check complete ({} seconds).".format(round(proc_time, 2)))
 
-        return validity_list, epoch_hr, avg_voltage
+        return validity_list, epoch_hr, volt_range, beat_timestamps
+
+    def generate_output_df(self, write_output=False):
+        """Generates output data. Epoch timestamps, epoched HR, epoch validity, Bittium accelerometer counts,
+           and wear status based on voltage. If accelerometer data are not loaded, "AccelCounts" column will be a
+           list of "No data"
+
+        Returns dataframe.
+        """
+
+        if not self.load_accel:
+            svm = ["No Data" for i in range(0, len(self.epoch_timestamps))]
+        if self.load_accel:
+            svm = self.svm
+
+        output_df = pd.DataFrame(list(zip(self.epoch_timestamps,
+                                          [i if i != 0 else None for i in self.epoch_hr],
+                                          ["Valid" if i == 0 else "Invalid" for i in self.epoch_validity],
+                                          svm,
+                                          ["Wear" if i > 250 else "Nonwear" for i in self.volt_range])),
+                                 columns=["Timestamp", "HR", "Valid", "AccelCounts", "Wear"])
+
+        if write_output:
+            print("\nSaving output df to {}.".format(self.output_dir))
+
+            output_df.to_csv(path_or_buf=self.output_dir + self.filename + "_OutputDF.csv", index=False)
+
+        return output_df
+
+    def write_beatstamps(self):
+
+        print("\nWriting all heartbeat timestamps to {}...".format(self.output_dir))
+        pd.DataFrame(self.beat_timestamps, columns=["Timestamp"])\
+            .to_csv(path_or_buf=self.output_dir + self.filename + "_BeatTimestamps.csv", index=False)
 
     def generate_quality_report(self, write_report=True):
         """Calculates how much of the data was usable. Returns values in dictionary."""
@@ -286,8 +328,27 @@ class ECG:
         perc_valid = round(valid_epochs / len(self.epoch_validity) * 100, 1)  # percent of valid data
         perc_invalid = round(invalid_epochs / len(self.epoch_validity) * 100, 1)  # percent of invalid data
 
+        # Average Bittium accelerometer counts during invalid, valid, and non-wear epochs ----------------------------
+        df_valid = self.output_df.groupby("Valid").get_group("Valid")
+        df_invalid = self.output_df.groupby("Valid").get_group("Invalid")
+        df_invalid = df_invalid.loc[df_invalid["Wear"] == "Wear"]
+        df_nonwear = self.output_df.groupby("Wear").get_group("Nonwear")
+
+        if self.load_accel:
+            valid_counts = df_valid.describe()["AccelCounts"]['mean']
+            invalid_counts = df_invalid.describe()["AccelCounts"]['mean']
+            nonwear_counts = df_nonwear.describe()["AccelCounts"]['mean']
+
+        if not self.load_accel:
+            invalid_counts = 0
+            valid_counts = 0
+            nonwear_counts = 0
+
         quality_report = {"Invalid epochs": invalid_epochs, "Hours lost": hours_lost,
-                          "Percent valid": perc_valid, "Percent invalid": perc_invalid}
+                          "Percent valid": perc_valid, "Percent invalid": perc_invalid,
+                          "Valid counts": round(valid_counts, 1),
+                          "Invalid counts": round(invalid_counts, 1),
+                          "Nonwear counts": round(nonwear_counts, 1)}
 
         print("{}% of the data is valid.".format(round(100 - perc_invalid), 3))
 
@@ -296,11 +357,12 @@ class ECG:
                                        [i for i in quality_report.values()])),
                               columns=["Variable", "Value"])
 
-            df.to_csv(path_or_buf=self.output_dir + self.filename + "_QualityReport.csv", sep=",")
+            df.to_csv(path_or_buf=self.output_dir + self.filename + "_QualityReport.csv", sep=",", index=False)
 
         return quality_report
 
 
+# Class to check ECG signal quality ==================================================================================
 class CheckQuality:
     """Class method that implements the Orphanidou ECG signal quality assessment algorithm on raw ECG data.
 
@@ -343,6 +405,7 @@ class CheckQuality:
 
         # prep_data parameters
         self.r_peaks = None
+        self.output_r_peaks = None
         self.removed_peak = []
         self.enough_beats = True
         self.hr = 0
@@ -380,7 +443,7 @@ class CheckQuality:
             self.apply_rules()
 
         if show_plot:
-            self.plot_window()
+            self.plot_window(heart_rate=self.hr)
 
     def prep_data(self):
         """Function that:
@@ -401,6 +464,9 @@ class CheckQuality:
         # Runs peak detection on raw data ----------------------------------------------------------------------------
         # Uses ecgdetectors package -> stationary wavelet transformation + Pan-Tompkins peak detection algorithm
         self.r_peaks = detectors.swt_detector(unfiltered_ecg=self.filt_data)
+
+        # List of peak indexes relative to start of data file (i = 0)
+        self.output_r_peaks = [i + self.start_index for i in self.r_peaks]
 
         # Checks to see if there are enough potential peaks to correspond to correct HR range ------------------------
         # Requires number of beats in window that corresponds to ~40 bpm to continue
@@ -560,7 +626,7 @@ class CheckQuality:
                                 "Voltage Range Valid": self.valid_range, "Voltage Range": round(self.volt_range, 1),
                                 "Correlation Valid": self.valid_corr, "Correlation": self.average_r}
 
-    def plot_window(self):
+    def plot_window(self, heart_rate):
 
         plt.close("all")
 
@@ -569,7 +635,8 @@ class CheckQuality:
 
         # Filtered data
         ax1.plot(np.arange(0, self.epoch_len, 1 / self.fs), self.filt_data, color='black')
-        ax1.set_title("Filtered ECG data with peaks (i = {})".format(self.start_index))
+        ax1.set_title("Filtered ECG data with peaks (HR = {} bpm) (i = {})".format(round(heart_rate, 1),
+                                                                                   self.start_index))
 
         # Marks max value of filt_data within 100ms of detected peak location
         ax1.plot(self.r_peaks / self.fs,
@@ -584,7 +651,7 @@ class CheckQuality:
                 window_color = "lightgrey"
 
             # Shades data windows
-            if peak - self.median_rr / 2 > 0 and peak + self.median_rr / 2 < 10 * self.fs:
+            if peak - self.median_rr / 2 > 0 and peak + self.median_rr / 2 < self.epoch_len * self.fs:
                 ax1.fill_betweenx(y=(min(self.filt_data)*1.1, max(self.filt_data)*1.1),
                                   x1=(peak - self.median_rr / 2) / self.fs,
                                   x2=(peak + self.median_rr / 2) / self.fs,
@@ -612,11 +679,14 @@ class CheckQuality:
         ax2.set_title("Individual beats with template shown in red")
 
 
+# Loads file and runs QC on whole file
+# Writes data to output_dir
 """
-ecg = ECG(filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3043_01_BF.EDF",
-          output_dir="/Users/kyleweber/Desktop/", epoch_len=15, load_accel=False, write_data=False,
-          filter_data=True, low_f=1, high_f=30, f_type="bandpass")
+ecg = ECG(filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3028_01_BF.EDF",
+          output_dir="/Users/kyleweber/Desktop/", epoch_len=15, load_accel=True, write_data=True,
+          filter_data=True, low_f=1, high_f=15, f_type="bandpass")
 """
 
+
 # Individual data region. If start_index is None, generates random segment
-# data = CheckQuality(ecg_object=ecg, start_index=None, voltage_thresh=250, epoch_len=10, show_plot=True)
+# data = CheckQuality(ecg_object=ecg, start_index=None, voltage_thresh=250, epoch_len=15, show_plot=True)
