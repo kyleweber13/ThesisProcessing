@@ -109,7 +109,7 @@ class ECG:
         if self.from_processed:
             self.epoch_validity, self.epoch_hr = None, None
         if not self.from_processed:
-            self.epoch_validity, self.epoch_hr, self.avg_voltage = self.check_quality()
+            self.epoch_validity, self.epoch_hr, self.avg_voltage, self.rr_sd = self.check_quality()
 
         # Loads epoched data from existing file
         if self.from_processed:
@@ -159,6 +159,7 @@ class ECG:
         validity_list = []
         epoch_hr = []
         avg_voltage = []
+        rr_sd = []
 
         bar = progressbar.ProgressBar(maxval=len(self.raw),
                                       widgets=[progressbar.Bar('>', '', '|'), ' ',
@@ -175,9 +176,11 @@ class ECG:
             if qc.valid_period:
                 validity_list.append(0)
                 epoch_hr.append(round(qc.hr, 2))
+                rr_sd.append(qc.rr_sd)
             if not qc.valid_period:
                 validity_list.append(1)
                 epoch_hr.append(0)
+                rr_sd.append(0)
 
         bar.finish()
 
@@ -185,7 +188,7 @@ class ECG:
         proc_time = (t1 - t0).seconds
         print("\n" + "Quality check complete ({} seconds).".format(round(proc_time, 2)))
 
-        return validity_list, epoch_hr, avg_voltage
+        return validity_list, epoch_hr, avg_voltage, rr_sd
 
     def generate_quality_report(self):
         """Calculates how much of the data was usable. Returns values in dictionary."""
@@ -567,6 +570,7 @@ class CheckQuality:
 
         # prep_data parameters
         self.r_peaks = None
+        self.rr_sd = None
         self.removed_peak = []
         self.enough_beats = True
         self.hr = 0
@@ -633,6 +637,8 @@ class CheckQuality:
             n_beats = len(self.r_peaks)  # number of beats in window
             delta_t = (self.r_peaks[-1] - self.r_peaks[0]) / self.fs  # time between first and last beat, seconds
             self.hr = 60 * (n_beats-1) / delta_t  # average HR, bpm
+
+            self.rr_sd = np.std(self.r_peaks) / self.fs * 1000
 
         # Stops function if not enough peaks found to be a potential valid period
         # Threshold corresponds to number of beats in the window for a HR of 40 bpm
