@@ -9,6 +9,7 @@ import progressbar
 from random import randint
 from scipy.signal import butter, lfilter, filtfilt
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import pingouin as pg
 
 
@@ -108,7 +109,6 @@ class Bittium:
     @staticmethod
     def filter_signal(data, f_type, low_f=None, high_f=None, sample_f=None, filter_order=2):
         """Function that creates bandpass filter to ECG data.
-
         Required arguments:
         -data: 3-column array with each column containing one accelerometer axis
         -type: "lowpass", "highpass" or "bandpass"
@@ -149,20 +149,17 @@ class ECG:
     def __init__(self, filepath=None, output_dir=None, epoch_len=15, load_accel=False, write_data=True,
                  filter_data=False, low_f=1, high_f=30, f_type="bandpass", f_order=2):
         """Class that creates instance of class Bittium and runs signal quality check on data.
-
             :arguments
             -filepath: full pathway to Bittium Faros .edf file
             -output_dir: full pathway to where you want data to be saved
             -epoch_len: window length (number of seconds) over which quality check algorithm is run
             -load_accel: boolean of whether to load accelerometer channels (not needed for quality check)
             -write_data: boolean of whether to write results to three .csv's in output_dir
-
             -filter_data: boolean
             -low_f: low-end cutoff frequency for lowpass or bandpass filters
             -high_f: high-end cuttoff frequency for highpass or bandpass filters
             -f_type: "lowpass", "highpass", or "bandpass"
             -f_order: filter order, integer
-
         """
 
         print()
@@ -240,10 +237,28 @@ class ECG:
 
             self.svm.append(round(vm_sum, 5))
 
+    def get_rolling_accel(self):
+        """
+        ws -> window size in seconds
+        """
+
+        df = pd.DataFrame({'X': self.accel_x, 'Y': self.accel_y, 'Z': self.accel_z})
+        rolling = df.rolling(int(self.epoch_len * self.accel_sample_rate))
+        df[['x-std', 'y-std', 'z-std']] = rolling.std()[['X', 'Y', 'Z']]
+        df[['x-range', 'y-range', 'z-range']] = rolling.max()[['X', 'Y', 'Z']] - rolling.min()[['X', 'Y', 'Z']]
+        df['is_accel_nonwear'] = df.apply(lambda row: ((int(row["x-std"] < 13) + int(row["y-std"] < 13) +
+                                                        int(row["z-std"] < 13)) >= 2 or
+                                                       (int(row["x-range"] < 50) + int(row["y-range"] < 50) +
+                                                        int(row["z-range"] < 50)) >= 2), axis=1)
+        df = df.iloc[::int(self.epoch_len * self.accel_sample_rate), :]
+        df = df.dropna()
+        df = df.reset_index(drop=True)
+
+        return df
+
     def check_quality(self):
         """Performs quality check using Orphanidou et al. (2015) algorithm that has been tweaked to factor in voltage
            range as well.
-
            This function runs a loop that creates object from the class CheckQuality for each epoch in the raw data.
         """
 
@@ -265,7 +280,6 @@ class ECG:
             bar.update(start_index + 1)
 
             qc = CheckQuality(ecg_object=self, start_index=start_index, epoch_len=self.epoch_len)
-
             volt_range.append(qc.volt_range)
 
             if qc.valid_period:
@@ -291,7 +305,6 @@ class ECG:
         """Generates output data. Epoch timestamps, epoched HR, epoch validity, Bittium accelerometer counts,
            and wear status based on voltage. If accelerometer data are not loaded, "AccelCounts" column will be a
            list of "No data"
-
         Returns dataframe.
         """
 
@@ -304,15 +317,70 @@ class ECG:
                                           [i if i != 0 else None for i in self.epoch_hr],
                                           ["Valid" if i == 0 else "Invalid" for i in self.epoch_validity],
                                           svm,
-                                          ["Wear" if i > 250 else "Nonwear" for i in self.volt_range])),
-                                 columns=["Timestamp", "HR", "Valid", "AccelCounts", "Wear"])
+                                          ['Wear' if i > 250 else "Nonwear" for i in self.volt_range],
+                                          self.volt_range)),
+                                 columns=["Timestamp", "HR", "Valid", "AccelCounts", "Wear", 'VoltageRange'])
+        accel_df = self.get_rolling_accel()
+        output_df = pd.concat([output_df, accel_df], axis=1)
 
         if write_output:
             print("\nSaving output df to {}.".format(self.output_dir))
-
             output_df.to_csv(path_or_buf=self.output_dir + self.filename + "_OutputDF.csv", index=False)
 
         return output_df
+
+    def nonwear_algorithm(self, show_plot=False, min_duration=1, volt_thresh=250):
+        print("\nRunning non-wear algorithm...")
+        print("Minimum period to be considered non-wear is {} minute(s).".format(min_duration))
+
+        nonwear = []
+
+        for row in range(self.output_df.shape[0]):
+            data = self.output_df.iloc[row]
+
+            verdict = data["Valid"] == "Invalid" and \
+                      data["VoltageRange"] <= volt_thresh and \
+                      data["is_accel_nonwear"] == 1
+
+            nonwear.append(verdict)
+
+        final_nonwear = []
+
+        for i in range(len(nonwear)):
+            if sum(nonwear[i:i + int(min_duration*60/self.epoch_len)]) >= int(min_duration*60/self.epoch_len) - 1:
+                final_nonwear.append(True)
+            else:
+                final_nonwear.append(False)
+
+        self.output_df["Final Verdict"] = ["Wear" if not i else "Non-wear" for i in final_nonwear]
+
+        print("Complete. Found {} hours of "
+              "non-wear time.".format(round(final_nonwear.count(True) * self.epoch_len / 3600, 1)))
+
+        if show_plot:
+            fig, (ax1, ax2) = plt.subplots(2, sharex="col", figsize=(9, 7))
+
+            plt.suptitle("Non-wear algorithm results (volt_thresh = {}, "
+                         "min_duration = {} minutes)".format(volt_thresh, min_duration))
+            ax1.plot(self.timestamps[::5], self.filtered[::5], label="Filtered ECG", color='black')
+            ax1.legend()
+            ax1.set_ylabel("Voltage")
+
+            ax2.plot(self.output_df["Timestamp"], ["Wear" if not i else "Non-wear" for i in final_nonwear],
+                     color='black')
+            ax2.plot(self.output_df["Timestamp"], self.output_df["Valid"], color='blue')
+
+            ax2.fill_between(x=self.output_df["Timestamp"],
+                             y1=["Wear" for i in range(len(final_nonwear))],
+                             y2=["Wear" if not i else "Non-wear" for i in final_nonwear],
+                             color='grey', alpha=.75)
+
+            xfmt = mdates.DateFormatter("%a %b %d, %H:%M")
+            locator = mdates.HourLocator(byhour=[0, 12], interval=1)
+
+            ax2.xaxis.set_major_formatter(xfmt)
+            ax2.xaxis.set_major_locator(locator)
+            plt.xticks(rotation=45, fontsize=6)
 
     def write_beatstamps(self):
 
@@ -378,7 +446,6 @@ class ECG:
 # Class to check ECG signal quality ==================================================================================
 class CheckQuality:
     """Class method that implements the Orphanidou ECG signal quality assessment algorithm on raw ECG data.
-
        Orphanidou, C. et al. (2015). Signal-Quality Indices for the Electrocardiogram and Photoplethysmogram:
        Derivation and Applications to Wireless Monitoring. IEEE Journal of Biomedical and Health Informatics.
        19(3). 832-838.
@@ -386,7 +453,6 @@ class CheckQuality:
 
     def __init__(self, ecg_object, start_index=None, voltage_thresh=250, epoch_len=15, show_plot=False):
         """Initialization method.
-
         :param
         -ecg_object: EcgData class instance created by ImportEDF script
         -random_data: runs algorithm on randomly-generated section of data; False by default.
@@ -476,7 +542,7 @@ class CheckQuality:
 
         # Runs peak detection on raw data ----------------------------------------------------------------------------
         # Uses ecgdetectors package -> stationary wavelet transformation + Pan-Tompkins peak detection algorithm
-        self.r_peaks = detectors.swt_detector(unfiltered_ecg=self.filt_data)
+        self.r_peaks = list(detectors.swt_detector(unfiltered_ecg=self.filt_data))
 
         # List of peak indexes relative to start of data file (i = 0)
         self.output_r_peaks = [i + self.start_index for i in self.r_peaks]
@@ -528,7 +594,6 @@ class CheckQuality:
 
     def adaptive_filter(self):
         """Method that runs an adaptive filter that generates the "average" QRS template for the window of data.
-
         - Calculates the median RR interval
         - Generates a sub-window around each peak, +/- RR interval/2 in width
         - Deletes the final beat sub-window if it is too close to end of data window
@@ -563,7 +628,6 @@ class CheckQuality:
 
     def calculate_correlation(self):
         """Method that runs a correlation analysis for each beat and the average QRS template.
-
         - Runs a Pearson correlation between each beat and the QRS template
         - Calculates the average individual beat Pearson correlation value
         - The period is deemed valid if the average correlation is >= 0.66, invalid is < 0.66
@@ -694,12 +758,9 @@ class CheckQuality:
 
 # Loads file and runs QC on whole file
 # Writes data to output_dir
-"""
-ecg = ECG(filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3028_01_BF.EDF",
-          output_dir="/Users/kyleweber/Desktop/", epoch_len=15, load_accel=True, write_data=True,
-          filter_data=True, low_f=1, high_f=15, f_type="bandpass")
-"""
-
+ecg = ECG(filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3033_01_BF.EDF",
+          output_dir="/Users/kyleweber/Desktop/", epoch_len=15, load_accel=True, write_data=False,
+          filter_data=True, low_f=1, high_f=30, f_type="bandpass")
 
 # Individual data region. If start_index is None, generates random segment
 # data = CheckQuality(ecg_object=ecg, start_index=None, voltage_thresh=250, epoch_len=15, show_plot=True)
