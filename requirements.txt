@@ -1,0 +1,8 @@
+pyedflib
+pandas
+numpy
+scipy
+progressbar2
+matplotlib
+pingouin
+git+git://github.com/matthewwong525/ecg-detectors.git@master#egg=ecgdetectors

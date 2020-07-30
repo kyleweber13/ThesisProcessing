@@ -240,6 +240,20 @@ class ECG:
 
             self.svm.append(round(vm_sum, 5))
 
+    def get_rolling_accel(self, ws=60):
+        """
+        ws -> window size in seconds
+        """
+        df = pd.DataFrame({'X': self.accel_x, 'Y': self.accel_y, 'Z': self.accel_z})
+        rolling = df.rolling(int(ws * self.accel_sample_rate))
+        df[['x-std', 'y-std', 'z-std']] = rolling.std()[['X', 'Y', 'Z']]
+        df[['x-range', 'y-range', 'z-range']] = rolling.max()[['X', 'Y', 'Z']] - rolling.min()[['X', 'Y', 'Z']]
+        df = df.iloc[::int(self.epoch_len * self.accel_sample_rate), :]
+        df = df.reset_index(drop=True)
+
+        return df
+
+
     def check_quality(self):
         """Performs quality check using Orphanidou et al. (2015) algorithm that has been tweaked to factor in voltage
            range as well.
@@ -265,7 +279,6 @@ class ECG:
             bar.update(start_index + 1)
 
             qc = CheckQuality(ecg_object=self, start_index=start_index, epoch_len=self.epoch_len)
-
             volt_range.append(qc.volt_range)
 
             if qc.valid_period:
@@ -304,12 +317,14 @@ class ECG:
                                           [i if i != 0 else None for i in self.epoch_hr],
                                           ["Valid" if i == 0 else "Invalid" for i in self.epoch_validity],
                                           svm,
-                                          ["Wear" if i > 250 else "Nonwear" for i in self.volt_range])),
-                                 columns=["Timestamp", "HR", "Valid", "AccelCounts", "Wear"])
+                                          ['Wear' if i > 250 else "Nonwear" for i in self.volt_range],
+                                          self.volt_range)),
+                                 columns=["Timestamp", "HR", "Valid", "AccelCounts", "Wear", 'VoltageRange'])
+        accel_df = self.get_rolling_accel()
+        output_df = pd.concat([output_df, accel_df], axis=1)
 
         if write_output:
             print("\nSaving output df to {}.".format(self.output_dir))
-
             output_df.to_csv(path_or_buf=self.output_dir + self.filename + "_OutputDF.csv", index=False)
 
         return output_df
@@ -476,7 +491,7 @@ class CheckQuality:
 
         # Runs peak detection on raw data ----------------------------------------------------------------------------
         # Uses ecgdetectors package -> stationary wavelet transformation + Pan-Tompkins peak detection algorithm
-        self.r_peaks = detectors.swt_detector(unfiltered_ecg=self.filt_data)
+        self.r_peaks = list(detectors.swt_detector(unfiltered_ecg=self.filt_data))
 
         # List of peak indexes relative to start of data file (i = 0)
         self.output_r_peaks = [i + self.start_index for i in self.r_peaks]
@@ -694,11 +709,10 @@ class CheckQuality:
 
 # Loads file and runs QC on whole file
 # Writes data to output_dir
-"""
-ecg = ECG(filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3028_01_BF.EDF",
-          output_dir="/Users/kyleweber/Desktop/", epoch_len=15, load_accel=True, write_data=True,
+ecg = ECG(filepath="/Volumes/Gateway/OND07/Bittium/OND07_WTL_3033_01_BF.EDF",
+          output_dir="/Volumes/Gateway/OND07/Bittium", epoch_len=15, load_accel=True, write_data=True,
           filter_data=True, low_f=1, high_f=15, f_type="bandpass")
-"""
+
 
 
 # Individual data region. If start_index is None, generates random segment
