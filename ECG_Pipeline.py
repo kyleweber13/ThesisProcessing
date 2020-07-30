@@ -240,15 +240,19 @@ class ECG:
 
             self.svm.append(round(vm_sum, 5))
 
-    def get_rolling_accel(self, ws=60):
+    def get_rolling_accel(self):
         """
         ws -> window size in seconds
         """
+
         df = pd.DataFrame({'X': self.accel_x, 'Y': self.accel_y, 'Z': self.accel_z})
-        rolling = df.rolling(int(ws * self.accel_sample_rate))
+        rolling = df.rolling(int(self.epoch_len * self.accel_sample_rate))
         df[['x-std', 'y-std', 'z-std']] = rolling.std()[['X', 'Y', 'Z']]
         df[['x-range', 'y-range', 'z-range']] = rolling.max()[['X', 'Y', 'Z']] - rolling.min()[['X', 'Y', 'Z']]
+        df['is_accel_nonwear'] = df.apply(lambda row: ( (int(row["x-std"] < 13) + int(row["y-std"] < 13) + int(row["z-std"] < 13)) >= 2 or
+                                 (int(row["x-range"] < 50) + int(row["y-range"] < 50) + int(row["z-range"] < 50)) >= 2 ), axis=1)
         df = df.iloc[::int(self.epoch_len * self.accel_sample_rate), :]
+        df = df.dropna()
         df = df.reset_index(drop=True)
 
         return df
