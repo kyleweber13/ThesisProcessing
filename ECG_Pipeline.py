@@ -43,6 +43,7 @@ class Bittium:
         self.y = None
         self.z = None
         self.vm = None  # Vector Magnitudes
+        self.accel_timestamps = None
 
         # Details
         self.sample_rate = None
@@ -69,6 +70,9 @@ class Bittium:
         print("Importing file ...".format(self.filepath))
         self.raw = file.readSignal(chn=0)
 
+        self.starttime = file.getStartdatetime()
+        self.file_dur = round(file.getFileDuration() / 3600, 3)
+
         if self.load_accel:
             self.x = file.readSignal(chn=1)
             self.y = file.readSignal(chn=2)
@@ -79,10 +83,11 @@ class Bittium:
             self.vm = (np.sqrt(np.square(np.array([self.x, self.y, self.z])).sum(axis=0)) - 1000) / 1000
             self.vm[self.vm < 0] = 0
 
-        print("ECG data import complete.")
+            end_time = self.starttime + timedelta(seconds=len(self.vm) / self.accel_sample_rate)
 
-        self.starttime = file.getStartdatetime()
-        self.file_dur = round(file.getFileDuration() / 3600, 3)
+            self.accel_timestamps = np.asarray(pd.date_range(start=self.starttime, end=end_time, periods=len(self.vm)))
+
+        print("ECG data import complete.")
 
         # Data filtering
         self.filtered = self.filter_signal(data=self.raw, low_f=self.low_f, high_f=self.high_f,
@@ -202,6 +207,7 @@ class ECG:
         self.epoch_timestamps = self.ecg.epoch_timestamps
 
         self.accel_x, self.accel_y, self.accel_z, self.accel_vm = self.ecg.x, self.ecg.y, self.ecg.z, self.ecg.vm
+        self.accel_timestamps = self.ecg.accel_timestamps
         del self.ecg
 
         # Epochs accelometer data
@@ -213,20 +219,24 @@ class ECG:
         # self.epoch_hr: average HR during epoch. Value of 0 means invalid epoch
         # self.avg_voltage: average voltage
         # self.beattimestamps: timestamp of each beat in valid epochs
-        self.epoch_validity, self.epoch_hr, self.volt_range, self.beat_timestamps = self.check_quality()
+        self.epoch_validity, self.epoch_hr, self.volt_range, \
+        self.beat_timestamps, self.accel_nonwear = self.check_quality()
 
         # Epoch-by-epoch timestamps, HR, validity, accel counts, nonwear status
         self.output_df = self.generate_output_df(write_output=write_data)
+
+        self.nonwear_algorithm(show_plot=True, min_duration=5, volt_thresh=500)
 
         if self.write_data:
             self.write_beatstamps()
 
         # Summary measures
-        self.quality_report = self.generate_quality_report(write_report=self.write_data)
-        print(self.quality_report)
+        # self.quality_report = self.generate_quality_report(write_report=self.write_data)
+        # print(self.quality_report)
 
     def epoch_accel(self):
         """Epochs accelerometer data by calcualting gravity subtracted sum of vector magnitudes."""
+        print("\nEpoching accelerometer data...")
 
         for i in range(0, len(self.accel_vm), int(self.accel_sample_rate * self.epoch_len)):
 
@@ -237,24 +247,23 @@ class ECG:
 
             self.svm.append(round(vm_sum, 5))
 
-    def get_rolling_accel(self):
-        """
-        ws -> window size in seconds
-        """
+        print("Complete.")
 
-        df = pd.DataFrame({'X': self.accel_x, 'Y': self.accel_y, 'Z': self.accel_z})
-        rolling = df.rolling(int(self.epoch_len * self.accel_sample_rate))
-        df[['x-std', 'y-std', 'z-std']] = rolling.std()[['X', 'Y', 'Z']]
-        df[['x-range', 'y-range', 'z-range']] = rolling.max()[['X', 'Y', 'Z']] - rolling.min()[['X', 'Y', 'Z']]
-        df['is_accel_nonwear'] = df.apply(lambda row: ((int(row["x-std"] < 13) + int(row["y-std"] < 13) +
-                                                        int(row["z-std"] < 13)) >= 2 or
-                                                       (int(row["x-range"] < 50) + int(row["y-range"] < 50) +
-                                                        int(row["z-range"] < 50)) >= 2), axis=1)
-        df = df.iloc[::int(self.epoch_len * self.accel_sample_rate), :]
-        df = df.dropna()
-        df = df.reset_index(drop=True)
+    def get_rolling_accel(self, start_index):
 
-        return df
+        stop_index = start_index + self.epoch_len * self.accel_sample_rate
+
+        data = pd.DataFrame({'X': self.accel_x[start_index:stop_index],
+                             'Y': self.accel_y[start_index:stop_index],
+                             'Z': self.accel_z[start_index:stop_index]})
+
+        data_list = [np.std(data["X"]), np.std(data["Y"]), np.std(data["Z"]),
+                     max(data["X"]) - min(data["X"]), max(data["Y"]) - min(data["Y"]), max(data["Z"]) - min(data["Z"])]
+
+        data_list.append((int(data_list[0] < 13) + int(data_list[1] < 13) + int(data_list[2] < 13) >= 2) or
+                         (int(data_list[3] < 50) + int(data_list[4] < 50) + int(data_list[5] < 50) >= 2))
+
+        return data_list
 
     def check_quality(self):
         """Performs quality check using Orphanidou et al. (2015) algorithm that has been tweaked to factor in voltage
@@ -270,6 +279,7 @@ class ECG:
         epoch_hr = []
         volt_range = []
         beat_timestamps = []
+        accel_nonwear = []
 
         bar = progressbar.ProgressBar(maxval=len(self.raw),
                                       widgets=[progressbar.Bar('>', '', '|'), ' ',
@@ -279,6 +289,7 @@ class ECG:
         for start_index in range(0, int(len(self.raw)), self.epoch_len*self.sample_rate):
             bar.update(start_index + 1)
 
+            # ECG DATA -------------------------------
             qc = CheckQuality(ecg_object=self, start_index=start_index, epoch_len=self.epoch_len)
             volt_range.append(qc.volt_range)
 
@@ -293,13 +304,19 @@ class ECG:
                 validity_list.append(1)
                 epoch_hr.append(0)
 
+            # ACCEL DATA ---------------------------
+            if self.load_accel:
+                accel_nonwear.append(self.get_rolling_accel(start_index=int(start_index /
+                                                                            (self.sample_rate /
+                                                                             self.accel_sample_rate))))
+
         bar.finish()
 
         t1 = datetime.now()
         proc_time = (t1 - t0).seconds
         print("\n" + "Quality check complete ({} seconds).".format(round(proc_time, 2)))
 
-        return validity_list, epoch_hr, volt_range, beat_timestamps
+        return validity_list, epoch_hr, volt_range, beat_timestamps, accel_nonwear
 
     def generate_output_df(self, write_output=False):
         """Generates output data. Epoch timestamps, epoched HR, epoch validity, Bittium accelerometer counts,
@@ -307,6 +324,8 @@ class ECG:
            list of "No data"
         Returns dataframe.
         """
+
+        print("\nCreating epoched output dataframe...")
 
         if not self.load_accel:
             svm = ["No Data" for i in range(0, len(self.epoch_timestamps))]
@@ -320,16 +339,20 @@ class ECG:
                                           ['Wear' if i > 250 else "Nonwear" for i in self.volt_range],
                                           self.volt_range)),
                                  columns=["Timestamp", "HR", "Valid", "AccelCounts", "Wear", 'VoltageRange'])
-        accel_df = self.get_rolling_accel()
-        output_df = pd.concat([output_df, accel_df], axis=1)
+
+        df = pd.DataFrame(self.accel_nonwear,
+                          columns=["x-std", "y-std", "z-std", 'x-range', 'y-range', 'z-range', 'is_accel_nonwear'])
+        output_df = pd.concat([output_df, df], axis=1)
 
         if write_output:
             print("\nSaving output df to {}.".format(self.output_dir))
             output_df.to_csv(path_or_buf=self.output_dir + self.filename + "_OutputDF.csv", index=False)
 
+        print("Dataframe complete.")
+
         return output_df
 
-    def nonwear_algorithm(self, show_plot=False, min_duration=1, volt_thresh=250):
+    def nonwear_algorithm(self, show_plot=False, min_duration=5, volt_thresh=250):
         print("\nRunning non-wear algorithm...")
         print("Minimum period to be considered non-wear is {} minute(s).".format(min_duration))
 
@@ -358,28 +381,32 @@ class ECG:
               "non-wear time.".format(round(final_nonwear.count(True) * self.epoch_len / 3600, 1)))
 
         if show_plot:
-            fig, (ax1, ax2) = plt.subplots(2, sharex="col", figsize=(9, 7))
+            fig, (ax1, ax2, ax3) = plt.subplots(3, sharex="col", figsize=(9, 7))
 
-            plt.suptitle("Non-wear algorithm results (volt_thresh = {}, "
-                         "min_duration = {} minutes)".format(volt_thresh, min_duration))
-            ax1.plot(self.timestamps[::5], self.filtered[::5], label="Filtered ECG", color='black')
+            plt.suptitle("Subject {}: non-wear algorithm results (volt_thresh = {}, "
+                         "min_duration = {} minutes)".format(self.subjectID, volt_thresh, min_duration))
+            ax1.plot(self.timestamps[::5], self.filtered[::5], label="Filtered ECG", color='red')
             ax1.legend()
             ax1.set_ylabel("Voltage")
 
-            ax2.plot(self.output_df["Timestamp"], ["Wear" if not i else "Non-wear" for i in final_nonwear],
-                     color='black')
-            ax2.plot(self.output_df["Timestamp"], self.output_df["Valid"], color='blue')
+            ax2.plot(self.accel_timestamps, self.accel_vm, color='green', label="Accel Mag.")
+            ax2.legend()
+            ax2.set_ylabel("G's")
 
-            ax2.fill_between(x=self.output_df["Timestamp"],
-                             y1=["Wear" for i in range(len(final_nonwear))],
-                             y2=["Wear" if not i else "Non-wear" for i in final_nonwear],
+            ax3.plot(self.output_df["Timestamp"], ["Wear" if not i else "Non-wear" for i in final_nonwear],
+                     color='black')
+            ax3.plot(self.output_df["Timestamp"].iloc[:-1], self.output_df["Valid"].iloc[:-1], color='blue')
+
+            ax3.fill_between(x=self.output_df["Timestamp"].iloc[:-1],
+                             y1=["Wear" for i in range(len(final_nonwear)-1)],
+                             y2=["Wear" if not i else "Non-wear" for i in final_nonwear[:-1]],
                              color='grey', alpha=.75)
 
             xfmt = mdates.DateFormatter("%a %b %d, %H:%M")
             locator = mdates.HourLocator(byhour=[0, 12], interval=1)
 
-            ax2.xaxis.set_major_formatter(xfmt)
-            ax2.xaxis.set_major_locator(locator)
+            ax3.xaxis.set_major_formatter(xfmt)
+            ax3.xaxis.set_major_locator(locator)
             plt.xticks(rotation=45, fontsize=6)
 
     def write_beatstamps(self):
@@ -761,6 +788,7 @@ class CheckQuality:
 ecg = ECG(filepath="/Users/kyleweber/Desktop/Data/OND07/EDF/OND07_WTL_3033_01_BF.EDF",
           output_dir="/Users/kyleweber/Desktop/", epoch_len=15, load_accel=True, write_data=False,
           filter_data=True, low_f=1, high_f=30, f_type="bandpass")
+
 
 # Individual data region. If start_index is None, generates random segment
 # data = CheckQuality(ecg_object=ecg, start_index=None, voltage_thresh=250, epoch_len=15, show_plot=True)
