@@ -5,6 +5,7 @@ import matplotlib.dates as mdates
 import csv
 import statistics
 from datetime import datetime
+from datetime import timedelta
 
 
 class DailyReport:
@@ -14,8 +15,9 @@ class DailyReport:
         self.subjectID = subject_object.subjectID
         self.output_dir = subject_object.output_dir
         self.process_sleep = subject_object.sleeplog_file is not None
+        self.subject_object = subject_object
 
-        if subject_object.load_ankle:
+        """if subject_object.load_ankle:
             self.timestamps = subject_object.ankle.epoch.timestamps
 
             self.ankle = subject_object.ankle.epoch.svm
@@ -67,7 +69,7 @@ class DailyReport:
 
         if self.process_sleep:
             self.create_sleep_indexes()
-            self.create_activity_report_sleep()
+            self.create_activity_report_sleep()"""
 
     def create_index_list(self):
 
@@ -583,3 +585,91 @@ class DailyReport:
             plt.xticks(rotation=45, fontsize=12)
             plt.ylim(0, max(df["Wrist Active Minutes"])*1.3)
             plt.ylabel("Minutes per Day")
+
+    def activity_and_hr_summary(self):
+
+        df = pd.DataFrame(list(zip(self.subject_object.wrist.epoch.timestamps,
+                                   np.arange(0, len(self.subject_object.wrist.epoch.timestamps), 1),
+                                   self.subject_object.valid_all.wrist_intensity, self.subject_object.ecg.valid_hr)),
+                          columns=["Stamps", "Epoch Index", "WristInt", "HR"])
+
+        days_list = sorted(set([i.date() for i in df["Stamps"]]))
+        days_list.append(days_list[-1] + timedelta(days=1))
+
+        day_start_indexes = [0]
+        for index_num in range(df.shape[0] - 1):
+            if df.iloc[index_num]["Stamps"].date() < df.iloc[index_num + 1]["Stamps"].date():
+                for day_index in np.arange(index_num, df.shape[0], int(60 / self.subject_object.epoch_len) * 1440):
+                    day_start_indexes.append(day_index)
+                day_start_indexes.append(df.shape[0])
+                break
+            if df.iloc[index_num]["Stamps"].date() >= df.iloc[index_num + 1]["Stamps"].date():
+                pass
+
+        df = df.set_index(["Stamps"])
+
+        daily_totals = []
+        for day, start, stop in zip(days_list, day_start_indexes[:], day_start_indexes[1:]):
+            data = df.loc[day:day + timedelta(days=1)]
+
+            sed = data.loc[data["WristInt"] == 0].shape[0]
+            light = data.loc[data["WristInt"] == 1].shape[0]
+            mvpa = data.loc[data["WristInt"] >= 2].shape[0]
+
+            try:
+                max_hr = max(data["HR"].dropna())
+            except ValueError:
+                max_hr = "N/A"
+
+            rolling_avg, resting_hr, awake_hr = \
+                self.subject_object.ecg.find_resting_hr(window_size=60, n_windows=30,
+                                                        sleep_status=self.subject_object.sleep.status,
+                                                        start_index=start, end_index=stop)
+
+            day_totals = [sed / 4, light / 4, mvpa / 4, max_hr, resting_hr]
+            daily_totals.append(day_totals)
+
+        daily_df = pd.DataFrame(daily_totals, columns=["Sedentary", "Light", "MVPA", "Max HR", "Rest HR"])
+
+        daily_df["Date"] = days_list[:-1]
+        daily_df = daily_df.set_index(["Date"])
+
+        return daily_df
+
+    def wrist_summary(self):
+        df = pd.DataFrame(list(zip(self.subject_object.wrist.epoch.timestamps,
+                                   np.arange(0, len(self.subject_object.wrist.epoch.timestamps), 1),
+                                   self.subject_object.wrist.model.epoch_intensity)),
+                          columns=["Stamps", "Epoch Index", "WristInt"])
+
+        days_list = sorted(set([i.date() for i in df["Stamps"]]))
+        days_list.append(days_list[-1] + timedelta(days=1))
+
+        day_start_indexes = [0]
+        for index_num in range(df.shape[0] - 1):
+            if df.iloc[index_num]["Stamps"].date() < df.iloc[index_num + 1]["Stamps"].date():
+                for day_index in np.arange(index_num, df.shape[0], int(60 / self.subject_object.epoch_len) * 1440):
+                    day_start_indexes.append(day_index)
+                day_start_indexes.append(df.shape[0])
+                break
+            if df.iloc[index_num]["Stamps"].date() >= df.iloc[index_num + 1]["Stamps"].date():
+                pass
+
+        df = df.set_index(["Stamps"])
+
+        daily_totals = []
+        for day, start, stop in zip(days_list, day_start_indexes[:], day_start_indexes[1:]):
+            data = df.loc[day:day + timedelta(days=1)]
+
+            sed = data.loc[data["WristInt"] == 0].shape[0]
+            light = data.loc[data["WristInt"] == 1].shape[0]
+            mvpa = data.loc[data["WristInt"] >= 2].shape[0]
+
+            day_totals = [sed / 4, light / 4, mvpa / 4]
+            daily_totals.append(day_totals)
+
+        daily_df = pd.DataFrame(daily_totals, columns=["Sedentary", "Light", "MVPA"])
+        daily_df["Date"] = days_list[:-1]
+        daily_df = daily_df.set_index(["Date"])
+
+        return daily_df
